@@ -1,8 +1,8 @@
 STUDYOS PROPRIETARY SOFTWARE LICENSE
 
-Copyright © 2026. All rights reserved.
+Copyright © 2026 StudyOS Project. All rights reserved.
 
-Effective Date: August 27, 2026
+Effective Date: August 27, 2026.
 
 
 1. SOFTWARE
