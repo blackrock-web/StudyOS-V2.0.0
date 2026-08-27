@@ -1,0 +1,16 @@
+{
+  "name": "bge-small-en-v1.5",
+  "type": "embedding",
+  "version": "1.5",
+  "provider": "sentence-transformers",
+  "device_support": ["cpu", "cuda", "metal"],
+  "dimension": 384,
+  "max_seq_length": 512,
+  "parameters": "33M",
+  "description": "BAAI BGE small English embedding model. Auto-upgrades to your own fine-tuned checkpoint the moment one is dropped into weights/.",
+  "enabled": true,
+  "extra": {
+    "model_name": "BAAI/bge-small-en-v1.5",
+    "auto_enable": true
+  }
+}

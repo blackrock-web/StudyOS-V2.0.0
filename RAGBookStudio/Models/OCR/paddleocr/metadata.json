@@ -1,0 +1,10 @@
+{
+  "name": "paddleocr",
+  "type": "ocr",
+  "version": "2.x",
+  "provider": "paddleocr",
+  "device_support": ["cpu", "cuda"],
+  "description": "PaddleOCR – high-accuracy multilingual OCR",
+  "enabled": false,
+  "extra": {"lang": "en"}
+}

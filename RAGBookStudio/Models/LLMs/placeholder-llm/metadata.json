@@ -1,0 +1,13 @@
+{
+  "name": "placeholder-llm",
+  "type": "llm",
+  "version": "0.0.1",
+  "provider": "llama.cpp",
+  "device_support": ["cpu", "cuda", "metal"],
+  "description": "Local GGUF LLM slot. Disabled until a .gguf file is dropped into weights/, then it auto-enables and answers are generated instead of falling back to raw retrieved context.",
+  "enabled": false,
+  "extra": {
+    "n_ctx": 4096,
+    "auto_enable": true
+  }
+}

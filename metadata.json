@@ -1,0 +1,8 @@
+{
+  "name": "StudyOS Desktop",
+  "description": "Exam-isolated intelligent study operating system with RAG Book Knowledge Studio, Hybrid Retrieval (BM25 + Dense Vectors), Reciprocal Rank Fusion, Cross-Encoder Re-ranking, RAGAS Triad evaluation, GraphRAG entity mapping, Single-Subject Focus Mode, deterministic daily scheduling, and verified offline analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

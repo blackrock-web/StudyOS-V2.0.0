@@ -1,0 +1,10 @@
+{
+  "name": "tesseract",
+  "type": "ocr",
+  "version": "5.x",
+  "provider": "tesseract",
+  "device_support": ["cpu"],
+  "description": "Tesseract OCR – classic, reliable, CPU-only",
+  "enabled": true,
+  "extra": {}
+}

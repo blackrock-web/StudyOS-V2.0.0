@@ -1,0 +1,10 @@
+{
+  "name": "easyocr",
+  "type": "ocr",
+  "version": "1.x",
+  "provider": "easyocr",
+  "device_support": ["cpu", "cuda"],
+  "description": "EasyOCR – deep learning multi-language OCR",
+  "enabled": false,
+  "extra": {"languages": ["en"]}
+}
