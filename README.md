@@ -150,11 +150,25 @@ The current application includes a local Parent role designed to provide a read-
 Future versions can extend this to cross-device parent/student accounts through a backend.
 
 ---
+### License & Copyright
+
+**StudyOS Desktop is proprietary software.**
+
+Copyright © 2026 StudyOS Project. All rights reserved.
+
+The source code is publicly available for development transparency,
+documentation, feedback, and official release distribution.
+
+Public availability does not mean that StudyOS is open-source software.
+No permission is granted to copy, modify, redistribute, repackage,
+sublicense, sell, or create derivative works from the proprietary
+portions of StudyOS unless expressly permitted by the license.
+
+See [LICENSE.md](./LICENSE.md) for the complete license.
 
 # 🏗️ Architecture
 
 StudyOS is intentionally designed around a **local-first architecture**.
-
 ```text
 ┌──────────────────────────────────────────────────────────┐
 │                    StudyOS Desktop                       │
