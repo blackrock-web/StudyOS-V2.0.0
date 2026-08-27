@@ -1,12 +1,28 @@
 /**
- * AnalyticsService — fresh production Analytics engine (v2)
- * Single source of truth. Starts at zero. Collects only real user activity.
- * No seed data. No placeholder insights.
+ * AnalyticsService — Fresh production Analytics engine (v2)
+ * Single source of truth. Starts at zero. Collects only verified real user activity.
+ * 
+ * Rules:
+ * - Application open/idle time is NEVER counted as focus time.
+ * - 30 minutes of unique qualifying active time per calendar day qualifies for daily streak.
+ * - 1 missed day grace period preserves streak; >1 missed consecutive days resets streak to 0.
+ * - Overlapping intervals are deduplicated to prevent double-counting.
+ * - Brand-new users start with 0 for all statistics.
  */
 
-import { db } from './db';
+import { db, safeDispatch } from './db';
 import { syncService } from './syncService';
 import { TaskItem, TaskHistoryRecord, FocusSessionRecord } from '../types';
+import {
+  DAILY_STREAK_THRESHOLD_MINUTES,
+  ActivityType,
+  VerifiedSession,
+  TimeInterval,
+  calculateDailyMetricsFromSessions,
+  calculateStreaks,
+  splitSessionByCalendarDay,
+  StreakCalculationResult,
+} from './analytics/streakCalculator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +65,8 @@ export interface DayRecord {
   date: string;
   studyMinutes: number;
   focusMinutes: number;
+  readingMinutes: number;
+  taskMinutes: number;
   breakMinutes: number;
   tasksCompleted: number;
   tasksMissed: number;
@@ -56,6 +74,7 @@ export interface DayRecord {
   notesCreated: number;
   revisionMinutes: number;
   productivityScore: number;
+  qualifiesForStreak: boolean;
   events: string[];
 }
 
@@ -81,9 +100,11 @@ export interface AnalyticsStore {
   initializedAt: string;
   events: AnalyticsEvent[];
   focusSessions?: FocusSessionRecord[];
+  verifiedSessions: VerifiedSession[];
   days: Record<string, DayRecord>;
   weeklyArchives: WeeklyArchive[];
   streakCurrent: number;
+  longestStreak: number;
   streakLastActiveDate: string;
   storagePolicy: StoragePolicy;
   lastWeekRollover: string;
@@ -93,17 +114,24 @@ export interface AnalyticsStore {
 export interface AnalyticsSnapshot {
   studyHours: number;
   focusHours: number;
+  readingHours: number;
+  taskHours: number;
   breakHours: number;
   completedTasks: number;
   completedLectures: number;
   productivityScore: number;
   studyStreak: number;
+  longestStreak: number;
   learningProgress: number;
   todayStudyMinutes: number;
   todayFocusMinutes: number;
+  todayReadingMinutes: number;
+  todayTaskMinutes: number;
   todayBreakMinutes: number;
   todayTasksCompleted: number;
   todayLecturesCompleted: number;
+  todayQualifiesForStreak: boolean;
+  remainingMinutesToday: number;
   weekStudyMinutes: number;
   weekFocusMinutes: number;
   weekTasksCompleted: number;
@@ -128,6 +156,8 @@ function emptyDay(date: string): DayRecord {
     date,
     studyMinutes: 0,
     focusMinutes: 0,
+    readingMinutes: 0,
+    taskMinutes: 0,
     breakMinutes: 0,
     tasksCompleted: 0,
     tasksMissed: 0,
@@ -135,6 +165,7 @@ function emptyDay(date: string): DayRecord {
     notesCreated: 0,
     revisionMinutes: 0,
     productivityScore: 0,
+    qualifiesForStreak: false,
     events: [],
   };
 }
@@ -160,9 +191,11 @@ function emptyStore(): AnalyticsStore {
     initializedAt: new Date().toISOString(),
     events: [],
     focusSessions: [],
+    verifiedSessions: [],
     days: { [t]: emptyDay(t) },
     weeklyArchives: [],
     streakCurrent: 0,
+    longestStreak: 0,
     streakLastActiveDate: '',
     storagePolicy: 'keep_all',
     lastWeekRollover: mondayOf(t),
@@ -184,10 +217,21 @@ class AnalyticsService {
 
   private load(): AnalyticsStore {
     try {
+      if (typeof localStorage === 'undefined') return emptyStore();
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return emptyStore();
       const parsed = JSON.parse(raw) as AnalyticsStore;
       if (!parsed || parsed.version !== 2) return emptyStore();
+
+      if (!parsed.verifiedSessions) {
+        parsed.verifiedSessions = [];
+      }
+      if (typeof parsed.longestStreak !== 'number') {
+        parsed.longestStreak = parsed.streakCurrent || 0;
+      }
+
+      // Re-evaluate daily records and streaks accurately
+      this.recalculateAll(parsed);
       return parsed;
     } catch {
       return emptyStore();
@@ -196,6 +240,7 @@ class AnalyticsService {
 
   private persist(): void {
     try {
+      if (typeof localStorage === 'undefined') return;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
     } catch (e) {
       console.warn('[AnalyticsService] persist failed', e);
@@ -210,6 +255,7 @@ class AnalyticsService {
         /* ignore */
       }
     });
+    safeDispatch(new CustomEvent('studyos_analytics_updated'));
   }
 
   public subscribe(listener: Listener): () => void {
@@ -238,12 +284,42 @@ class AnalyticsService {
   public deleteDay(date: string): void {
     delete this.store.days[date];
     this.store.events = this.store.events.filter((e) => e.date !== date);
+    this.store.verifiedSessions = this.store.verifiedSessions.filter((s) => s.date !== date);
+    this.recalculateAll(this.store);
     this.persist();
     this.notify();
   }
 
   public deleteWeeklyArchive(id: string): void {
     this.store.weeklyArchives = this.store.weeklyArchives.filter((w) => w.id !== id);
+    this.persist();
+    this.notify();
+  }
+
+  /**
+   * Records a verified active study/focus/reading/task session.
+   * Automatically splits across midnight boundaries if applicable.
+   */
+  public recordVerifiedSession(session: VerifiedSession): void {
+    if (!session.verifiedActive || session.durationMinutes <= 0) return;
+
+    const chunks = splitSessionByCalendarDay(session);
+
+    chunks.forEach((chunk) => {
+      // Avoid duplicate session IDs
+      const idx = this.store.verifiedSessions.findIndex((s) => s.id === chunk.id);
+      if (idx >= 0) {
+        this.store.verifiedSessions[idx] = chunk;
+      } else {
+        this.store.verifiedSessions.push(chunk);
+      }
+    });
+
+    if (this.store.verifiedSessions.length > 5000) {
+      this.store.verifiedSessions = this.store.verifiedSessions.slice(-5000);
+    }
+
+    this.recalculateAll(this.store);
     this.persist();
     this.notify();
   }
@@ -281,7 +357,7 @@ class AnalyticsService {
     }
 
     this.applyEventToDay(event);
-    this.updateStreak(date, event.type);
+    this.recalculateStreaksFromDays();
     this.persist();
     this.notify();
     return event;
@@ -298,27 +374,15 @@ class AnalyticsService {
     const brk = event.breakMinutes || 0;
 
     switch (event.type) {
-      case 'study_session':
-      case 'focus_ended':
-      case 'revision_session':
-        day.studyMinutes += mins;
-        day.focusMinutes += mins;
-        day.breakMinutes += brk;
-        if (event.type === 'revision_session') day.revisionMinutes += mins;
-        break;
       case 'break_started':
       case 'break_ended':
         day.breakMinutes += mins || brk;
         break;
       case 'lecture_completed':
         day.lecturesCompleted += 1;
-        day.studyMinutes += mins;
-        day.focusMinutes += mins;
         break;
       case 'task_completed':
         day.tasksCompleted += 1;
-        day.studyMinutes += mins;
-        day.focusMinutes += mins;
         break;
       case 'task_missed':
         day.tasksMissed += 1;
@@ -326,19 +390,36 @@ class AnalyticsService {
       case 'note_created':
         day.notesCreated += 1;
         break;
+      case 'revision_session':
+        day.revisionMinutes += mins;
+        break;
       default:
-        if (mins > 0) {
-          day.studyMinutes += mins;
-          day.focusMinutes += mins;
-        }
         break;
     }
+
+    // Refresh study/focus/reading minutes strictly from verified sessions
+    this.updateDayFromVerifiedSessions(event.date);
+  }
+
+  private updateDayFromVerifiedSessions(dateStr: string): void {
+    if (!this.store.days[dateStr]) {
+      this.store.days[dateStr] = emptyDay(dateStr);
+    }
+    const day = this.store.days[dateStr]!;
+    const daySessions = this.store.verifiedSessions.filter((s) => s.date === dateStr);
+
+    const metrics = calculateDailyMetricsFromSessions(daySessions);
+    day.focusMinutes = metrics.focusMinutes;
+    day.readingMinutes = metrics.readingMinutes;
+    day.taskMinutes = metrics.taskMinutes;
+    day.studyMinutes = metrics.uniqueQualifyingMinutes;
+    day.qualifiesForStreak = metrics.qualifiesForStreak;
 
     day.productivityScore = this.computeDayProductivity(day);
   }
 
   private computeDayProductivity(day: DayRecord): number {
-    const focus = day.focusMinutes;
+    const focus = day.studyMinutes;
     const total = focus + day.breakMinutes;
     if (total <= 0 && day.tasksCompleted === 0 && day.lecturesCompleted === 0) return 0;
     const focusRatio = total > 0 ? focus / total : 0;
@@ -347,34 +428,79 @@ class AnalyticsService {
     return Math.min(100, Math.round(focusRatio * 50 + taskBoost + lectureBoost));
   }
 
-  private updateStreak(date: string, type: AnalyticsEventType): void {
-    const activeTypes: AnalyticsEventType[] = [
-      'study_session',
-      'focus_ended',
-      'lecture_completed',
-      'task_completed',
-      'revision_session',
-    ];
-    if (!activeTypes.includes(type)) return;
+  private recalculateAll(targetStore: AnalyticsStore): void {
+    const allDates = new Set<string>();
+    Object.keys(targetStore.days).forEach((d) => allDates.add(d));
+    targetStore.verifiedSessions.forEach((s) => allDates.add(s.date));
+    allDates.add(todayStr());
 
-    const last = this.store.streakLastActiveDate;
-    if (!last) {
-      this.store.streakCurrent = 1;
-      this.store.streakLastActiveDate = date;
-      return;
+    allDates.forEach((d) => {
+      if (!targetStore.days[d]) targetStore.days[d] = emptyDay(d);
+      const day = targetStore.days[d]!;
+      const daySessions = targetStore.verifiedSessions.filter((s) => s.date === d);
+      const metrics = calculateDailyMetricsFromSessions(daySessions);
+      day.focusMinutes = metrics.focusMinutes;
+      day.readingMinutes = metrics.readingMinutes;
+      day.taskMinutes = metrics.taskMinutes;
+      day.studyMinutes = metrics.uniqueQualifyingMinutes;
+      day.qualifiesForStreak = metrics.qualifiesForStreak;
+      day.productivityScore = this.computeDayProductivity(day);
+    });
+
+    const dailyMinutesMap: Record<string, number> = {};
+    Object.entries(targetStore.days).forEach(([d, record]) => {
+      dailyMinutesMap[d] = record.studyMinutes;
+    });
+
+    const streakRes = calculateStreaks(dailyMinutesMap, todayStr());
+    targetStore.streakCurrent = streakRes.currentStreak;
+    targetStore.longestStreak = streakRes.longestStreak;
+    if (streakRes.todayQualified) {
+      targetStore.streakLastActiveDate = todayStr();
     }
-    if (last === date) return;
+  }
 
-    const lastD = new Date(last + 'T12:00:00');
-    const curD = new Date(date + 'T12:00:00');
-    const diffDays = Math.round((curD.getTime() - lastD.getTime()) / 86400000);
+  private recalculateStreaksFromDays(): void {
+    const dailyMinutesMap: Record<string, number> = {};
+    Object.entries(this.store.days).forEach(([d, record]) => {
+      dailyMinutesMap[d] = record.studyMinutes;
+    });
 
-    if (diffDays === 1) {
-      this.store.streakCurrent += 1;
-    } else if (diffDays > 1) {
-      this.store.streakCurrent = 1;
+    const streakRes = calculateStreaks(dailyMinutesMap, todayStr());
+    this.store.streakCurrent = streakRes.currentStreak;
+    this.store.longestStreak = Math.max(this.store.longestStreak || 0, streakRes.longestStreak);
+    if (streakRes.todayQualified) {
+      this.store.streakLastActiveDate = todayStr();
     }
-    this.store.streakLastActiveDate = date;
+  }
+
+  public getDailyProgress(dateStr = todayStr()): {
+    focusMinutes: number;
+    readingMinutes: number;
+    taskMinutes: number;
+    uniqueQualifyingMinutes: number;
+    goalMinutes: number;
+    completed: boolean;
+    remainingMinutes: number;
+    currentStreak: number;
+    longestStreak: number;
+  } {
+    const day = this.store.days[dateStr] || emptyDay(dateStr);
+    const unique = day.studyMinutes;
+    const completed = unique >= DAILY_STREAK_THRESHOLD_MINUTES;
+    const remaining = Math.max(0, DAILY_STREAK_THRESHOLD_MINUTES - unique);
+
+    return {
+      focusMinutes: day.focusMinutes,
+      readingMinutes: day.readingMinutes,
+      taskMinutes: day.taskMinutes,
+      uniqueQualifyingMinutes: unique,
+      goalMinutes: DAILY_STREAK_THRESHOLD_MINUTES,
+      completed,
+      remainingMinutes: remaining,
+      currentStreak: this.store.streakCurrent,
+      longestStreak: this.store.longestStreak || this.store.streakCurrent,
+    };
   }
 
   public getSnapshot(): AnalyticsSnapshot {
@@ -401,12 +527,17 @@ class AnalyticsService {
 
     let totalStudy = 0;
     let totalFocus = 0;
+    let totalReading = 0;
+    let totalTask = 0;
     let totalBreak = 0;
     let totalTasks = 0;
     let totalLectures = 0;
+
     Object.values(this.store.days).forEach((d) => {
       totalStudy += d.studyMinutes;
       totalFocus += d.focusMinutes;
+      totalReading += d.readingMinutes || 0;
+      totalTask += d.taskMinutes || 0;
       totalBreak += d.breakMinutes;
       totalTasks += d.tasksCompleted;
       totalLectures += d.lecturesCompleted;
@@ -418,20 +549,29 @@ class AnalyticsService {
         ? 0
         : Math.min(100, Math.round(weekStudy / 10 + weekTasks * 5 + weekLectures * 3));
 
+    const remainingMinutesToday = Math.max(0, DAILY_STREAK_THRESHOLD_MINUTES - day.studyMinutes);
+
     return {
       studyHours: Math.round((totalStudy / 60) * 10) / 10,
       focusHours: Math.round((totalFocus / 60) * 10) / 10,
+      readingHours: Math.round((totalReading / 60) * 10) / 10,
+      taskHours: Math.round((totalTask / 60) * 10) / 10,
       breakHours: Math.round((totalBreak / 60) * 10) / 10,
       completedTasks: totalTasks,
       completedLectures: totalLectures,
       productivityScore: day.productivityScore || weekProd,
       studyStreak: this.store.streakCurrent,
+      longestStreak: this.store.longestStreak || this.store.streakCurrent,
       learningProgress,
       todayStudyMinutes: day.studyMinutes,
       todayFocusMinutes: day.focusMinutes,
+      todayReadingMinutes: day.readingMinutes || 0,
+      todayTaskMinutes: day.taskMinutes || 0,
       todayBreakMinutes: day.breakMinutes,
       todayTasksCompleted: day.tasksCompleted,
       todayLecturesCompleted: day.lecturesCompleted,
+      todayQualifiesForStreak: day.studyMinutes >= DAILY_STREAK_THRESHOLD_MINUTES,
+      remainingMinutesToday,
       weekStudyMinutes: weekStudy,
       weekFocusMinutes: weekFocus,
       weekTasksCompleted: weekTasks,
@@ -460,12 +600,13 @@ class AnalyticsService {
     cutoff.setDate(cutoff.getDate() - daysBack);
     const cutoffStr = cutoff.toISOString().split('T')[0] || '';
     const map: Record<string, number> = {};
-    this.store.events.forEach((e) => {
-      if (e.date < cutoffStr) return;
-      if (e.examId && e.examId !== targetExamId) return;
-      if (!e.subject || !e.durationMinutes) return;
-      map[e.subject] = (map[e.subject] || 0) + e.durationMinutes;
+
+    this.store.verifiedSessions.forEach((s) => {
+      if (s.date < cutoffStr) return;
+      const sub = s.subject || 'General Studies';
+      map[sub] = (map[sub] || 0) + s.durationMinutes;
     });
+
     return Object.entries(map)
       .map(([subject, minutes]) => ({ subject, minutes }))
       .sort((a, b) => b.minutes - a.minutes);
@@ -491,8 +632,23 @@ class AnalyticsService {
     if (this.store.focusSessions.length > 2000) {
       this.store.focusSessions = this.store.focusSessions.slice(0, 2000);
     }
-    this.persist();
-    this.notify();
+
+    // Also record into verifiedSessions
+    const verified: VerifiedSession = {
+      id: session.id,
+      activityType: 'focus',
+      subject: session.subject,
+      topic: session.lectureTitle,
+      chapter: session.chapter,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      durationMinutes: session.actualDurationMinutes,
+      status: 'completed',
+      date: session.date,
+      source: 'focus_timer',
+      verifiedActive: true,
+    };
+    this.recordVerifiedSession(verified);
   }
 
   public getFocusSessions(filter?: {
@@ -533,12 +689,10 @@ class AnalyticsService {
     const snap = this.getSnapshot();
     const allSessions = this.getFocusSessions({ examId: targetExamId, limit: 1000 });
 
-    // 1. Lectures from DB strictly scoped to targetExamId
     const lectures = db.getLectures(targetExamId);
     const completedLectures = lectures.filter((l) => l.status === 'Completed').length;
     const pendingLectures = lectures.filter((l) => l.status !== 'Completed').length;
 
-    // 2. Subject Breakdown
     const subjectMap: Record<string, number> = {};
     let totalMins = snap.studyHours * 60;
     if (totalMins === 0 && allSessions.length > 0) {
@@ -557,20 +711,17 @@ class AnalyticsService {
       }))
       .sort((a, b) => b.minutes - a.minutes);
 
-    // 3. Planned vs Actual Focus
     const totalPlanned = allSessions.reduce((acc, s) => acc + (s.plannedDurationMinutes || s.actualDurationMinutes), 0);
     const totalActual = allSessions.reduce((acc, s) => acc + s.actualDurationMinutes, 0);
     const ratio = totalPlanned > 0 ? Math.min(100, Math.round((totalActual / totalPlanned) * 100)) : 100;
 
-    // 4. Average Focus Duration
     const averageFocusDuration =
       allSessions.length > 0
         ? Math.round(allSessions.reduce((acc, s) => acc + s.actualDurationMinutes, 0) / allSessions.length)
         : snap.todayFocusMinutes > 0
         ? snap.todayFocusMinutes
-        : 45;
+        : 0;
 
-    // 5. Focus Consistency Score
     const recentDays = this.getDayRecords(7);
     const activeDayCount = recentDays.filter((d) => d.focusMinutes > 0 || d.studyMinutes > 0).length;
     const focusConsistency = Math.min(100, Math.round((activeDayCount / 7) * 85 + (ratio > 80 ? 15 : 0)));
@@ -611,6 +762,7 @@ class AnalyticsService {
     this.store.lastDayRollover = t;
     if (!this.store.days[t]) this.store.days[t] = emptyDay(t);
     this.ensureWeekRollover();
+    this.recalculateStreaksFromDays();
     this.persist();
     this.notify();
   }
@@ -670,6 +822,7 @@ class AnalyticsService {
         if (d < cutoff) delete this.store.days[d];
       });
       this.store.events = this.store.events.filter((e) => e.date >= cutoff);
+      this.store.verifiedSessions = this.store.verifiedSessions.filter((s) => s.date >= cutoff);
     }
 
     this.persist();
@@ -713,7 +866,6 @@ class AnalyticsService {
           topic: task?.title,
           details: { taskId: task?.id || payload.taskId },
         });
-        this.logEvent({ type: 'focus_started', subject: task?.subject, topic: task?.title });
         break;
       case 'task_paused':
         this.logEvent({
@@ -723,22 +875,17 @@ class AnalyticsService {
           durationMinutes: typeof payload.minutes === 'number' ? payload.minutes : undefined,
           details: { taskId: task?.id || payload.taskId },
         });
-        this.logEvent({
-          type: 'break_started',
-          subject: task?.subject,
-          durationMinutes: typeof payload.minutes === 'number' ? payload.minutes : undefined,
-        });
         break;
       case 'task_completed':
         this.logEvent({
           type: 'task_completed',
           subject: task?.subject,
           topic: task?.title,
-          durationMinutes: task?.actualDurationMinutes || task?.estimatedMinutes,
           details: { taskId: task?.id || payload.taskId },
         });
         break;
       case 'analytics_refresh':
+        this.recalculateStreaksFromDays();
         this.notify();
         break;
       default:
@@ -765,13 +912,22 @@ class AnalyticsService {
     breakMinutes = 0,
     topic?: string
   ): void {
-    this.logEvent({
-      type: 'study_session',
+    const now = Date.now();
+    const sessionRecord: VerifiedSession = {
+      id: `fs-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      activityType: 'focus',
       subject,
       topic,
+      startTime: new Date(now - focusMinutes * 60000).toISOString(),
+      endTime: new Date(now).toISOString(),
       durationMinutes: focusMinutes,
       breakMinutes,
-    });
+      status: 'completed',
+      date: new Date(now).toISOString().slice(0, 10),
+      source: 'manual_or_timer',
+      verifiedActive: true,
+    };
+    this.recordVerifiedSession(sessionRecord);
   }
 
   public trackNoteCreated(subject?: string): void {
@@ -779,6 +935,21 @@ class AnalyticsService {
   }
 
   public trackRevision(subject: string, minutes: number, topic?: string): void {
+    const now = Date.now();
+    const sessionRecord: VerifiedSession = {
+      id: `rev-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      activityType: 'revision',
+      subject,
+      topic,
+      startTime: new Date(now - minutes * 60000).toISOString(),
+      endTime: new Date(now).toISOString(),
+      durationMinutes: minutes,
+      status: 'completed',
+      date: new Date(now).toISOString().slice(0, 10),
+      source: 'revision_tracker',
+      verifiedActive: true,
+    };
+    this.recordVerifiedSession(sessionRecord);
     this.logEvent({ type: 'revision_session', subject, topic, durationMinutes: minutes });
   }
 
@@ -787,7 +958,6 @@ class AnalyticsService {
       type: eventType,
       subject: task.subject,
       topic: task.title,
-      durationMinutes: task.actualDurationMinutes || task.estimatedMinutes,
       details: {
         taskId: task.id,
         status: task.status,

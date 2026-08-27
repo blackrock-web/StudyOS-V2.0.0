@@ -149,7 +149,44 @@ The current application includes a local Parent role designed to provide a read-
 
 Future versions can extend this to cross-device parent/student accounts through a backend.
 
+### 🔒 Security, Zero Telemetry & Network Isolation
+
+StudyOS Desktop is strictly architected under an **Offline-First and Network-Denied by Default** security model:
+
+1. **Zero Background Telemetry**: Zero analytics trackers, zero telemetry beacons, zero crash pings, and zero remote configuration calls.
+2. **Hardware & Socket Network Lock**: Network access is blocked by default. The only two operations permitted to initiate external connections are:
+   - **Authorized Application Updates**: Verified against official GitHub Releases with SHA-256 binary validation and signature checks.
+   - **Authorized Local AI Model Downloads**: Downloading open-weight GGUF / ONNX models directly to the user's machine with cryptographic hash enforcement.
+3. **PIN-Authorized Access Gateway**: Any network operation requires explicit administrative PIN unlock, which automatically locks the network interface upon operation completion or timeout.
+4. **Offline Local AI Execution**: Run quantized local models (SmolLM, Qwen 2.5, Phi-3.5) with zero internet access, zero API keys, and complete data privacy.
+5. **Nuclear Application Destruction**: A complete, multi-step eradication engine that securely removes all binaries, SQLite databases, cached files, GGUF models, shortcuts, and configurations across Linux and Windows.
+
 ---
+
+### 🚀 Cross-Platform Installation & Destruction Scripts
+
+StudyOS provides native scripts for automated setup, sandboxing, and complete application removal:
+
+#### Linux (`install.sh` & `destroy.sh`)
+```bash
+# Automated installation to ~/.local/share/studyos
+chmod +x install.sh && ./install.sh
+
+# Complete obliteration and purge
+chmod +x destroy.sh && ./destroy.sh --force
+```
+
+#### Windows PowerShell (`install.ps1` & `destroy.ps1`)
+```powershell
+# Automated installation to %LOCALAPPDATA%\StudyOS
+.\install.ps1
+
+# Complete nuclear destruction
+.\destroy.ps1 -Force
+```
+
+---
+
 ### License & Copyright
 
 **StudyOS Desktop is proprietary software.**

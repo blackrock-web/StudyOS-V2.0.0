@@ -64,6 +64,7 @@ class FocusTimerService {
 
   private listeners: Set<FocusTimerListener> = new Set();
   private intervalRef: any = null;
+  private lastHeartbeatMs = 0;
 
   constructor() {
     this.restoreState();
@@ -73,6 +74,15 @@ class FocusTimerService {
       window.addEventListener('storage', (e) => {
         if (e.key === STORAGE_KEY) {
           this.restoreState();
+        }
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && this.state.status === 'running') {
+          const settings = db.getSettings();
+          if (!settings?.allowBackgroundFocusTimer) {
+            this.pause();
+          }
         }
       });
     }
@@ -88,18 +98,11 @@ class FocusTimerService {
 
       this.state = saved;
 
-      // Re-evaluate elapsed time if was running
-      if (this.state.status === 'running' && this.state.currentRunStartTimestamp) {
-        const now = Date.now();
-        const runElapsed = Math.floor((now - this.state.currentRunStartTimestamp) / 1000);
-        const totalElapsed = this.state.accumulatedElapsedSecs + runElapsed;
-        const left = Math.max(0, this.state.plannedDurationSecs - totalElapsed);
-
-        this.state.secondsLeft = left;
-        if (left <= 0) {
-          this.completeSession(false);
-          return;
-        }
+      // Crash / reload safety: If closed while running, do not count closed runtime as focus time
+      if (this.state.status === 'running') {
+        this.state.status = 'paused';
+        this.state.currentRunStartTimestamp = null;
+        this.state.secondsLeft = Math.max(0, this.state.plannedDurationSecs - this.state.accumulatedElapsedSecs);
       } else if (this.state.status === 'paused') {
         this.state.secondsLeft = Math.max(0, this.state.plannedDurationSecs - this.state.accumulatedElapsedSecs);
       }
@@ -661,9 +664,21 @@ class FocusTimerService {
   private startClockTicker() {
     if (typeof window === 'undefined') return;
     if (this.intervalRef) clearInterval(this.intervalRef);
+    this.lastHeartbeatMs = Date.now();
 
     this.intervalRef = setInterval(() => {
       if (this.state.status !== 'running') return;
+
+      const now = Date.now();
+      const delta = now - this.lastHeartbeatMs;
+      this.lastHeartbeatMs = now;
+
+      // Computer sleep / lock detection: if gap > 5 seconds, do not accumulate sleep duration
+      if (delta > 5000) {
+        // Reset currentRunStartTimestamp to now so sleep duration is ignored
+        this.state.currentRunStartTimestamp = now;
+        return;
+      }
 
       const exactElapsed = this.getActualElapsedSecs();
       const left = Math.max(0, this.state.plannedDurationSecs - exactElapsed);

@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { localModelManager } from '../../services/models/LocalModelManager';
+import { LocalModelDescriptor } from '../../types';
 import {
   Search,
   Sparkles,
@@ -358,25 +360,31 @@ export const GoogleSearchPortal: React.FC<PortalProps> = ({
 };
 
 /* ============================================================================
-   2. CHATGPT AI ASSISTANT PORTAL
+   2. LOCAL AI ASSISTANT PORTAL (100% Offline • llama.cpp)
    ============================================================================ */
-export const ChatGPTPortal: React.FC<PortalProps> = ({
+export const LocalAIPortal: React.FC<PortalProps> = ({
   url,
   onOpenExternal,
   subject = 'Computer Science',
 }) => {
-  const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string; time: string }>>([
+  const [activeModel, setActiveModel] = useState<LocalModelDescriptor | null>(null);
+  const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string; time: string; modelName?: string }>>([
     {
       sender: 'ai',
-      text: `Hello! I am ChatGPT (StudyOS Academic AI Assistant). I am fully ready to answer your questions on **${subject}**, explain complex algorithms, generate GATE/university exam practice questions, or synthesize research papers. How can I help your study session today?`,
+      text: `Hello! I am your **100% Offline StudyOS AI Assistant**, powered by local GGUF models on \`llama.cpp\`.\n\nAll inference runs locally on your CPU/GPU with **zero network requests, zero telemetry, and zero cloud API keys**. How can I help you study **${subject}** today?`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      modelName: 'Local GGUF Model',
     },
   ]);
   const [inputText, setInputText] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>('GPT-4o');
 
-  const handleSendMessage = (textToSend?: string) => {
+  useEffect(() => {
+    const desc = localModelManager.getActiveModelDescriptor();
+    setActiveModel(desc);
+  }, []);
+
+  const handleSendMessage = async (textToSend?: string) => {
     const text = textToSend || inputText.trim();
     if (!text) return;
 
@@ -390,104 +398,65 @@ export const ChatGPTPortal: React.FC<PortalProps> = ({
     if (!textToSend) setInputText('');
     setIsThinking(true);
 
-    // Generate intelligent academic AI response
-    setTimeout(() => {
-      let aiResponseText = '';
-      const lower = text.toLowerCase();
+    try {
+      const response = await localModelManager.executeOfflineInference(text, {
+        subject,
+        topic: 'Browser Study Session',
+      });
 
-      if (lower.includes('gate') || lower.includes('question') || lower.includes('practice')) {
-        aiResponseText = `### 📝 GATE & Exam Practice Questions (${subject})
-
-**Question 1:**
-What is the time complexity of finding the shortest path in a weighted graph with $V$ vertices and $E$ edges using Dijkstra's algorithm with a Binary Heap priority queue?
-
-- **A)** $O(V^2)$
-- **B)** $O((V + E) \\log V)$
-- **C)** $O(E \\log V)$
-- **D)** $O(V \\log E)$
-
-**Correct Answer:** **B) $O((V + E) \\log V)$**
-*Explanation:* Extracting the minimum vertex takes $O(\\log V)$, repeated $V$ times. Decreasing key takes $O(\\log V)$, repeated $E$ times. Total time is $O((V + E) \\log V)$.`;
-      } else if (lower.includes('explain') || lower.includes('concept') || lower.includes('what is')) {
-        aiResponseText = `### 💡 Academic Concept Summary (${text})
-
-In **${subject}**, this concept forms a core building block:
-
-1. **Fundamental Definition:** A systematic mechanism designed to maintain state invariants, optimize execution throughput, and prevent resource bottlenecks.
-2. **Key Invariants:**
-   - **Soundness & Completeness:** Every valid state transition leads to a predictable terminal state.
-   - **Space Complexity:** Constrained to $O(N)$ auxiliary memory.
-   - **Time Complexity:** Average case $O(N \\log N)$, worst case $O(N^2)$.
-3. **Real-world Application:** Widely implemented in distributed file systems, operating system kernel schedulers, and high-frequency network routers.`;
-      } else {
-        aiResponseText = `### 🤖 ChatGPT Synthesis (${selectedModel})
-
-Regarding your query on **"${text}"**:
-
-- **Core Analysis:** In modern ${subject}, addressing this problem requires isolating control-plane logic from data-plane routing.
-- **Implementation Strategy:**
-  \`\`\`typescript
-  // Optimized StudyOS Algorithm Structure
-  function solveAcademicProblem(input: string[]): { status: string; result: number } {
-    console.log("Analyzing academic query:", input);
-    let score = 0;
-    for (const item of input) {
-      score += item.length * 42;
-    }
-    return { status: "COMPLETED", result: score };
-  }
-  \`\`\`
-- **Key Takeaway:** Always verify boundary conditions and edge cases when analyzing theoretical proofs or coding problems.`;
-      }
+      const currentDesc = localModelManager.getActiveModelDescriptor();
+      setActiveModel(currentDesc);
 
       setMessages((prev) => [
         ...prev,
         {
           sender: 'ai',
-          text: aiResponseText,
+          text: response,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          modelName: currentDesc?.name || 'Local GGUF',
         },
       ]);
+    } catch (err: unknown) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: `⚠️ **Local Inference Notice:** ${err instanceof Error ? err.message : 'Local model is currently initializing. Please try again in a moment.'}`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          modelName: 'Offline Fallback',
+        },
+      ]);
+    } finally {
       setIsThinking(false);
-    }, 600);
+    }
   };
 
   const samplePrompts = [
     `Explain core concepts in ${subject}`,
-    `Generate 3 GATE PYQs for ${subject}`,
-    `Provide C++ code implementation with comments`,
-    `Summarize research methodology for literature review`,
+    `Generate 3 GATE exam questions for ${subject}`,
+    `Summarize theoretical proofs with invariants`,
+    `Provide C++ code snippet with asymptotic bounds`,
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-slate-950 text-slate-100 overflow-hidden">
       {/* Top Banner Notice */}
-      <div className="bg-emerald-950/90 border-b border-emerald-800/80 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
-        <div className="flex items-center space-x-2">
+      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+        <div className="flex items-center space-x-2.5">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-extrabold text-emerald-200">ChatGPT - OpenAI (StudyOS AI Portal)</span>
-          <span className="text-emerald-400/80 hidden sm:inline">• Official site sets X-Frame-Options DENY</span>
+          <span className="font-extrabold text-white">Local AI Assistant</span>
+          <span className="text-emerald-400 font-mono text-[11px] bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full">
+            100% Offline (llama.cpp)
+          </span>
+          <span className="text-slate-400 text-[11px] hidden sm:inline">
+            • Active: <strong className="text-slate-200">{activeModel?.name || 'SmolLM2-135M'}</strong>
+          </span>
         </div>
 
         <div className="flex items-center space-x-2">
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-emerald-300 rounded-lg text-[11px] font-mono px-2 py-1 outline-none"
-          >
-            <option value="GPT-4o">GPT-4o (Omni Academic)</option>
-            <option value="GPT-4o-mini">GPT-4o mini (Fast)</option>
-            <option value="o1-preview">o1 Reasoning (Proofs & Math)</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={() => onOpenExternal(url || 'https://chatgpt.com')}
-            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shrink-0 shadow-2xs"
-          >
-            <span>Open chatgpt.com in New Tab</span>
-            <ExternalLink className="w-3 h-3" />
-          </button>
+          <span className="text-[10px] font-mono text-emerald-400 bg-slate-800/80 px-2 py-1 rounded-md border border-slate-700">
+            Network: OFF (0 bytes)
+          </span>
         </div>
       </div>
 
@@ -514,11 +483,11 @@ Regarding your query on **"${text}"**:
               className={`p-4 rounded-2xl space-y-2 text-xs leading-relaxed max-w-2xl ${
                 m.sender === 'user'
                   ? 'bg-purple-600 text-white rounded-tr-none'
-                  : 'bg-slate-800/90 border border-slate-700 text-slate-100 rounded-tl-none shadow-md'
+                  : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-tl-none shadow-md'
               }`}
             >
-              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pb-1 border-b border-slate-700/50">
-                <span>{m.sender === 'user' ? 'You' : `ChatGPT (${selectedModel})`}</span>
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pb-1 border-b border-slate-800/80">
+                <span>{m.sender === 'user' ? 'You' : `${m.modelName || 'Local GGUF Model'} (Local CPU/GPU)`}</span>
                 <span>{m.time}</span>
               </div>
               <div className="whitespace-pre-wrap font-sans text-xs">{m.text}</div>
@@ -529,13 +498,13 @@ Regarding your query on **"${text}"**:
         {isThinking && (
           <div className="flex items-center space-x-3 text-xs text-emerald-400 font-mono animate-pulse pl-2">
             <Bot className="w-4 h-4" />
-            <span>ChatGPT is analyzing prompt & formatting LaTeX equations...</span>
+            <span>Local engine executing GGUF inference on device...</span>
           </div>
         )}
       </div>
 
       {/* Quick Study Prompt Chips */}
-      <div className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0">
+      <div className="p-3 bg-slate-900/80 border-t border-slate-800 flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0">
         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold shrink-0 flex items-center gap-1">
           <Zap className="w-3 h-3 text-amber-400" />
           <span>Quick Prompts:</span>
@@ -558,13 +527,13 @@ Regarding your query on **"${text}"**:
           e.preventDefault();
           handleSendMessage();
         }}
-        className="p-3 bg-slate-950 border-t border-slate-800 flex items-center space-x-2 shrink-0"
+        className="p-3 bg-slate-900 border-t border-slate-800 flex items-center space-x-2 shrink-0"
       >
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Ask ChatGPT anything about ${subject}, GATE formulas, or coding...`}
+          placeholder={`Ask Local AI anything about ${subject}, formulas, or proofs (100% offline)...`}
           className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-emerald-500 font-medium"
         />
         <button
@@ -572,194 +541,17 @@ Regarding your query on **"${text}"**:
           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-md"
         >
           <Send className="w-3.5 h-3.5" />
-          <span>Send</span>
+          <span>Infer Offline</span>
         </button>
       </form>
     </div>
   );
 };
 
-/* ============================================================================
-   3. GEMINI AI ASSISTANT PORTAL
-   ============================================================================ */
-export const GeminiPortal: React.FC<PortalProps> = ({ url, onOpenExternal, subject = 'Computer Science' }) => {
-  const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
-    {
-      sender: 'ai',
-      text: `Welcome to **Gemini 1.5 Flash** (StudyOS Multimodal AI). I am ready to process text, analyze research literature, optimize code, and answer complex questions for **${subject}**.`,
-    },
-  ]);
-  const [inputText, setInputText] = useState<string>('');
-
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const txt = inputText.trim();
-    setMessages((prev) => [...prev, { sender: 'user', text: txt }]);
-    setInputText('');
-
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `### 🔮 Gemini 1.5 Analysis for "${txt}"\n\n- **Multimodal Context:** Processed with high-precision long context window.\n- **Synthesis:** The primary theorem in **${subject}** states that state transitions are deterministic under isolated execution contexts.\n- **Action Item:** Review flashcards and formula references in StudyOS Study Hub.`,
-        },
-      ]);
-    }, 500);
-  };
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-slate-950 text-slate-100 overflow-hidden">
-      {/* Top Banner */}
-      <div className="bg-blue-950/90 border-b border-blue-800 px-4 py-2.5 flex items-center justify-between gap-2 text-xs shrink-0">
-        <div className="flex items-center space-x-2">
-          <Sparkles className="w-4 h-4 text-blue-400" />
-          <span className="font-extrabold text-blue-200">Google Gemini AI Workspace</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => onOpenExternal(url || 'https://gemini.google.com')}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-2xs"
-        >
-          <span>Open gemini.google.com in New Tab</span>
-          <ExternalLink className="w-3 h-3" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`p-4 rounded-2xl text-xs leading-relaxed max-w-2xl ${
-              m.sender === 'user'
-                ? 'bg-blue-600 text-white ml-auto'
-                : 'bg-slate-900 border border-slate-800 text-slate-200'
-            }`}
-          >
-            <div className="font-mono text-[10px] opacity-75 mb-1">
-              {m.sender === 'user' ? 'You' : 'Gemini 1.5 Flash'}
-            </div>
-            <div className="whitespace-pre-wrap">{m.text}</div>
-          </div>
-        ))}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend();
-        }}
-        className="p-3 bg-slate-900 border-t border-slate-800 flex items-center space-x-2 shrink-0"
-      >
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Ask Gemini about ${subject}...`}
-          className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-blue-500 font-medium"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs cursor-pointer transition-all flex items-center gap-1"
-        >
-          <Send className="w-3.5 h-3.5" />
-          <span>Ask</span>
-        </button>
-      </form>
-    </div>
-  );
-};
-
-/* ============================================================================
-   4. CLAUDE AI ASSISTANT PORTAL
-   ============================================================================ */
-export const ClaudePortal: React.FC<PortalProps> = ({ url, onOpenExternal, subject = 'Computer Science' }) => {
-  const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
-    {
-      sender: 'ai',
-      text: `Greetings. I am **Claude 3.5 Sonnet** (StudyOS Anthropic Assistant). I excel at deep long-form document synthesis, complex code analysis, and academic writing for **${subject}**.`,
-    },
-  ]);
-  const [inputText, setInputText] = useState<string>('');
-
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const txt = inputText.trim();
-    setMessages((prev) => [...prev, { sender: 'user', text: txt }]);
-    setInputText('');
-
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `### 📜 Claude Academic Synthesis\n\nAnalysing **"${txt}"** in **${subject}**:\n\n1. **Theoretical Foundations:** The underlying model requires strict adherence to memory alignment constraints.\n2. **Mathematical Proof:** By induction, base condition holds for $n=1$.\n3. **Recommendation:** Refer to literature preprints on arXiv or GeeksforGeeks documentation.`,
-        },
-      ]);
-    }, 500);
-  };
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-[#181614] text-amber-50 overflow-hidden font-serif">
-      {/* Top Banner */}
-      <div className="bg-[#2a2420] border-b border-[#3e342d] px-4 py-2.5 flex items-center justify-between gap-2 text-xs font-sans shrink-0">
-        <div className="flex items-center space-x-2">
-          <BookOpen className="w-4 h-4 text-amber-500" />
-          <span className="font-extrabold text-amber-200">Claude 3.5 Sonnet Academic Assistant</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => onOpenExternal(url || 'https://claude.ai')}
-          className="px-3 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-2xs font-sans"
-        >
-          <span>Open claude.ai in New Tab</span>
-          <ExternalLink className="w-3 h-3" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar font-sans">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`p-4 rounded-2xl text-xs leading-relaxed max-w-2xl ${
-              m.sender === 'user'
-                ? 'bg-amber-700 text-white ml-auto font-sans'
-                : 'bg-[#24201c] border border-[#3a322b] text-amber-100 font-sans'
-            }`}
-          >
-            <div className="font-mono text-[10px] opacity-75 mb-1">
-              {m.sender === 'user' ? 'You' : 'Claude 3.5 Sonnet'}
-            </div>
-            <div className="whitespace-pre-wrap">{m.text}</div>
-          </div>
-        ))}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend();
-        }}
-        className="p-3 bg-[#201c18] border-t border-[#383028] flex items-center space-x-2 shrink-0 font-sans"
-      >
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Ask Claude about ${subject}...`}
-          className="flex-1 bg-[#2b2520] border border-[#40362e] rounded-xl px-4 py-2.5 text-xs text-amber-100 outline-none focus:border-amber-500 font-medium"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-xl font-bold text-xs cursor-pointer transition-all flex items-center gap-1"
-        >
-          <Send className="w-3.5 h-3.5" />
-          <span>Ask</span>
-        </button>
-      </form>
-    </div>
-  );
-};
+// Aliases for backwards compatibility with existing imports
+export const ChatGPTPortal = LocalAIPortal;
+export const GeminiPortal = LocalAIPortal;
+export const ClaudePortal = LocalAIPortal;
 
 /* ============================================================================
    5. FRAME REFUSED FALLBACK CARD

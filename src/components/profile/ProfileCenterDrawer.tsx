@@ -94,7 +94,7 @@ export const ProfileCenterDrawer: React.FC<ProfileCenterDrawerProps> = ({
   const lectures = db.getLectures();
   const breakStats = db.getBreakGameStats();
 
-  const totalStudyMinutes = db.getActivityLogs().reduce((acc, l) => acc + l.studyMinutes, 0) || 1420;
+  const totalStudyMinutes = db.getActivityLogs().reduce((acc, l) => acc + (l.studyMinutes || 0), 0);
   const totalStudyHours = (totalStudyMinutes / 60).toFixed(1);
 
   const handleSaveProfile = (e: React.FormEvent) => {

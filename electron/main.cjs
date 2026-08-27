@@ -388,8 +388,7 @@ function isAllowedUrlInStudyMode(rawUrl) {
     ...activeExamAllowlist,
     'pw.live', 'physicswallah.live', 'google.com', 'google.co.in', 'youtube.com',
     'nptel.ac.in', 'geeksforgeeks.org', 'wikipedia.org', 'arxiv.org', 'gateoverflow.in',
-    'khanacademy.org', 'chatgpt.com', 'openai.com', 'gemini.google.com', 'aistudio.google.com',
-    'claude.ai', 'anthropic.com', 'developer.mozilla.org', 'github.com', 'localhost'
+    'khanacademy.org', 'developer.mozilla.org', 'github.com', 'localhost'
   ];
   try {
     const parsed = new URL(rawUrl);

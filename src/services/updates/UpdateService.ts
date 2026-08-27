@@ -28,16 +28,23 @@ export class UpdateService {
     return this.provider.name;
   }
 
-  public async checkForUpdates(): Promise<UpdateCheckResult> {
-    return this.provider.checkForUpdates();
+  public async checkForUpdates(pin?: string): Promise<UpdateCheckResult> {
+    return this.provider.checkForUpdates(pin);
   }
 
-  public async downloadUpdate(): Promise<{ ok: boolean; error?: string }> {
-    return this.provider.downloadUpdate();
+  public async downloadUpdate(pin?: string): Promise<{ ok: boolean; error?: string }> {
+    return this.provider.downloadUpdate(pin);
   }
 
-  public async installUpdate(): Promise<{ ok: boolean; error?: string }> {
-    return this.provider.installUpdate();
+  public async installUpdate(pin?: string): Promise<{ ok: boolean; error?: string }> {
+    return this.provider.installUpdate(pin);
+  }
+
+  public async rollbackToPrevious(): Promise<{ ok: boolean; error?: string }> {
+    if (this.provider.rollbackToPrevious) {
+      return this.provider.rollbackToPrevious();
+    }
+    return { ok: false, error: 'Rollback not supported by current provider' };
   }
 
   public async getStatus(): Promise<UpdateState> {
@@ -50,3 +57,4 @@ export class UpdateService {
 }
 
 export const updateService = UpdateService.getInstance();
+

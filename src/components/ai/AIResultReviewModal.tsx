@@ -338,32 +338,8 @@ export const AIResultReviewModal: React.FC = () => {
                 className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium flex items-center gap-1.5 shadow-sm"
               >
                 {copiedPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedPrompt ? 'Copied Prompt!' : 'Copy Prompt Again'}
+                {copiedPrompt ? 'Copied Prompt!' : 'Copy Prompt'}
               </button>
-              <a
-                href="https://chatgpt.com"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-medium flex items-center gap-1"
-              >
-                ChatGPT <ExternalLink className="w-3 h-3 text-amber-600" />
-              </a>
-              <a
-                href="https://claude.ai"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-medium flex items-center gap-1"
-              >
-                Claude <ExternalLink className="w-3 h-3 text-amber-600" />
-              </a>
-              <a
-                href="https://gemini.google.com"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-medium flex items-center gap-1"
-              >
-                Gemini Web <ExternalLink className="w-3 h-3 text-amber-600" />
-              </a>
             </div>
           </div>
         )}

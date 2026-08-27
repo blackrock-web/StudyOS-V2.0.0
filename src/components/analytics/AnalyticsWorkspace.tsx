@@ -195,6 +195,71 @@ export const AnalyticsWorkspace: React.FC<Props> = ({ onShowNotification }) => {
       {/* Overview */}
       {tab === 'overview' && (
         <div className="space-y-4">
+          {/* Daily Streak & 30-min Target Status Banner */}
+          <GlassCard className="!p-4 bg-gradient-to-r from-orange-50/90 via-amber-50/70 to-teal-50/80 border-orange-200/70 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-white shadow-sm">
+                  <Flame className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-black text-slate-900 tracking-tight">Daily Streak & Focus Target</h2>
+                    <span className="text-[10px] font-black text-orange-700 bg-orange-100/90 px-2 py-0.5 rounded-full border border-orange-200">
+                      {snap.studyStreak} Day{snap.studyStreak === 1 ? '' : 's'} Streak
+                    </span>
+                    {snap.longestStreak > snap.studyStreak && (
+                      <span className="text-[10px] font-bold text-slate-500">
+                        (Best: {snap.longestStreak}d)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                    {snap.todayStudyMinutes >= 30
+                      ? '✓ Daily streak target achieved today (≥ 30 min verified focus).'
+                      : `Complete ${Math.max(0, 30 - snap.todayStudyMinutes)} more minutes of verified study to qualify for today's streak.`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div className="text-lg font-black text-slate-900">
+                  {fmtMins(snap.todayStudyMinutes)} / 30m
+                </div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase">
+                  {snap.todayStudyMinutes >= 30 ? 'Goal Completed' : `${Math.max(0, 30 - snap.todayStudyMinutes)}m remaining`}
+                </div>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-orange-100/80 h-2.5 rounded-full overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-orange-500 to-teal-500 h-full rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.round((snap.todayStudyMinutes / 30) * 100))}%` }}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+              <div className="p-2 rounded-xl bg-white/80 border border-slate-200/80">
+                <div className="text-slate-400 font-bold uppercase text-[9px]">Focus Sessions</div>
+                <div className="font-extrabold text-slate-800">{fmtMins(snap.todayFocusMinutes)}</div>
+              </div>
+              <div className="p-2 rounded-xl bg-white/80 border border-slate-200/80">
+                <div className="text-slate-400 font-bold uppercase text-[9px]">Reading Time</div>
+                <div className="font-extrabold text-slate-800">{fmtMins(snap.todayReadingMinutes)}</div>
+              </div>
+              <div className="p-2 rounded-xl bg-white/80 border border-slate-200/80">
+                <div className="text-slate-400 font-bold uppercase text-[9px]">Daily Tasks</div>
+                <div className="font-extrabold text-slate-800">{fmtMins(snap.todayTaskMinutes)}</div>
+              </div>
+              <div className="p-2 rounded-xl bg-white/80 border border-slate-200/80">
+                <div className="text-slate-400 font-bold uppercase text-[9px]">Streak Rule</div>
+                <div className="font-bold text-slate-700 text-[10px]">1-Day Grace Protection</div>
+              </div>
+            </div>
+          </GlassCard>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {kpi.map((k) => {
               const Icon = k.icon;

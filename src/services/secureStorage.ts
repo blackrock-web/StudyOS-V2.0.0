@@ -113,6 +113,29 @@ export function setItem(key: string, val: string): void {
   }
 }
 
+export function removeItem(key: string): void {
+  try {
+    localStorage.removeItem(`studyos_sec_${key}`);
+  } catch (e) {
+    console.warn('Failed to remove from local storage:', e);
+  }
+}
+
+export function clear(): void {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('studyos_sec_')) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch (e) {
+    console.warn('Failed to clear secure storage:', e);
+  }
+}
+
 export const secureStorage = {
   encryptString,
   decryptString,
@@ -121,4 +144,6 @@ export const secureStorage = {
   isEncryptedPayload,
   getItem,
   setItem,
+  removeItem,
+  clear,
 };

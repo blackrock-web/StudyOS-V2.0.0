@@ -1,5 +1,8 @@
 import { VersionManagementPanel } from './VersionManagementPanel';
 import { SettingsAIProvider } from './SettingsAIProvider';
+import { NetworkAccessPanel } from './NetworkAccessPanel';
+import { LocalModelPanel } from './LocalModelPanel';
+import { DangerZoneDestructionPanel } from './DangerZoneDestructionPanel';
 import React, { useState, useEffect } from 'react';
 import {
   User,
@@ -41,6 +44,7 @@ import {
   Gamepad2,
   Coffee,
   Brain,
+  Cpu,
 } from 'lucide-react';
 import { db, safeDispatch } from '../../services/db';
 import { authService, hashString } from '../../services/auth';
@@ -59,6 +63,8 @@ interface SettingsHubProps {
 
 export type SettingsSectionId =
   | 'academic-profile'
+  | 'network-access'
+  | 'local-models'
   | 'features-navigation'
   | 'ai-provider'
   | 'exam-manager'
@@ -74,7 +80,8 @@ export type SettingsSectionId =
   | 'shortcuts'
   | 'about'
   | 'privacy'
-  | 'recycle-bin';
+  | 'recycle-bin'
+  | 'danger-zone';
 
 export const SettingsHub: React.FC<SettingsHubProps> = ({
   activeSection = 'academic-profile',
@@ -86,6 +93,9 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
     if (sec.startsWith('settings-')) {
       const clean = sec.replace('settings-', '');
       if (clean === 'profile') return 'academic-profile';
+      if (clean === 'network' || clean === 'network-access') return 'network-access';
+      if (clean === 'models' || clean === 'local-models') return 'local-models';
+      if (clean === 'danger' || clean === 'danger-zone' || clean === 'destroy') return 'danger-zone';
       if (clean === 'features' || clean === 'navigation' || clean === 'browser') return 'features-navigation';
       if (clean === 'ai' || clean === 'ai-provider') return 'ai-provider';
       if (clean === 'workspace') return 'workspace-analytics';
@@ -98,6 +108,9 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
       if (clean === 'recycle') return 'recycle-bin';
       if (clean === 'dev') return 'about';
     }
+    if (sec === 'network' || sec === 'network-access') return 'network-access';
+    if (sec === 'models' || sec === 'local-models') return 'local-models';
+    if (sec === 'danger' || sec === 'danger-zone' || sec === 'destroy') return 'danger-zone';
     if (sec === 'parent-viewer') return 'academic-profile';
     return (sec as SettingsSectionId) || 'academic-profile';
   };
@@ -170,6 +183,8 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
 
   const navItems = [
     { id: 'academic-profile', label: 'Academic Profile', icon: User, desc: 'Personal details & study goals' },
+    { id: 'network-access', label: 'Network Access', icon: Globe, desc: 'LOCKED by default • PIN authorized' },
+    { id: 'local-models', label: 'Local AI & Models', icon: Cpu, desc: 'Offline GGUF models & weights' },
     { id: 'features-navigation', label: 'Navigation & Modules', icon: Sliders, desc: 'Study Browser, Planner & Practice settings' },
     { id: 'ai-provider', label: 'AI Engine & Providers', icon: Sparkles, desc: 'Configure AI provider layer & manual import' },
     { id: 'exam-manager', label: 'Exam Manager & Workspaces', icon: Award, desc: 'Create, edit & switch competitive exams' },
@@ -186,6 +201,7 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
     { id: 'about', label: 'About Station', icon: Info, desc: 'Version & offline status' },
     { id: 'privacy', label: 'Privacy & Logs', icon: Lock, desc: 'Zero cloud telemetry' },
     { id: 'recycle-bin', label: 'Recycle Bin', icon: Trash2, desc: 'Archived notes & lectures' },
+    { id: 'danger-zone', label: 'Danger Zone', icon: Flame, desc: 'Nuclear application destruction' },
   ];
 
   const handleSaveAcademicProfile = (e: React.FormEvent) => {
@@ -352,6 +368,27 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
       {/* RIGHT DYNAMIC CONTENT AREA */}
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[#FAF9FE]">
         <div className="max-w-4xl mx-auto space-y-6">
+          {/* NETWORK ACCESS & ISOLATION GATEWAY */}
+          {currentSection === 'network-access' && (
+            <div className="animate-fadeIn">
+              <NetworkAccessPanel onShowNotification={onShowNotification} />
+            </div>
+          )}
+
+          {/* LOCAL MODELS & AI ENGINE */}
+          {currentSection === 'local-models' && (
+            <div className="animate-fadeIn">
+              <LocalModelPanel onShowNotification={onShowNotification} />
+            </div>
+          )}
+
+          {/* DANGER ZONE: APPLICATION DESTRUCTION */}
+          {currentSection === 'danger-zone' && (
+            <div className="animate-fadeIn">
+              <DangerZoneDestructionPanel onShowNotification={onShowNotification} />
+            </div>
+          )}
+
           {/* EXAM MANAGER & WORKSPACES */}
           {currentSection === 'exam-manager' && (
             <div className="animate-fadeIn">
@@ -773,6 +810,7 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
                     const updatedSettings = {
                       ...settings,
                       pomodoroBreakConfig: breakConfig,
+                      allowBackgroundFocusTimer: settings.allowBackgroundFocusTimer ?? false,
                     };
                     db.setSettings(updatedSettings);
                     setSettings(updatedSettings);
@@ -785,11 +823,32 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
                       breakConfig.autoResumeStudy
                     );
                     safeDispatch(new CustomEvent('studyos_settings_updated', { detail: updatedSettings }));
-                    onShowNotification('Pomodoro Break Mode & Brain Game settings saved successfully!', 'Settings Hub');
+                    onShowNotification('Focus & Break Mode settings saved successfully!', 'Settings Hub');
                   }}
                   className="space-y-6 text-xs font-medium"
                 >
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Background Focus Timer */}
+                    <div className="p-4 rounded-2xl bg-teal-50/70 border border-teal-200 flex items-center justify-between col-span-1 md:col-span-2">
+                      <div>
+                        <div className="font-bold text-slate-900 text-sm">Allow Focus Timer in Background</div>
+                        <div className="text-[11px] text-slate-600">
+                          When disabled (default), focus timer automatically pauses when the application is minimized or inactive.
+                          Application runtime is never counted as focus time.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.allowBackgroundFocusTimer ?? false}
+                        onChange={(e) => {
+                          const next = { ...settings, allowBackgroundFocusTimer: e.target.checked };
+                          setSettings(next);
+                          db.setSettings(next);
+                        }}
+                        className="w-5 h-5 accent-teal-600 rounded-md cursor-pointer"
+                      />
+                    </div>
+
                     {/* Game Auto-Launch */}
                     <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 flex items-center justify-between">
                       <div>

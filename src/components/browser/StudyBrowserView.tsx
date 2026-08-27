@@ -81,6 +81,7 @@ import {
 } from '../../services/browserSecurityService';
 import {
   GoogleSearchPortal,
+  LocalAIPortal,
   ChatGPTPortal,
   GeminiPortal,
   ClaudePortal,
@@ -93,22 +94,10 @@ const isGoogleUrl = (url?: string): boolean => {
   return lower.includes('google.com') || lower.includes('google.co.in');
 };
 
-const isChatGPTUrl = (url?: string): boolean => {
+const isLocalAIUrl = (url?: string): boolean => {
   if (!url) return false;
   const lower = url.toLowerCase();
-  return lower.includes('chatgpt.com') || lower.includes('chat.openai.com') || lower.includes('openai.com');
-};
-
-const isGeminiUrl = (url?: string): boolean => {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return lower.includes('gemini.google.com') || lower.includes('aistudio.google.com');
-};
-
-const isClaudeUrl = (url?: string): boolean => {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return lower.includes('claude.ai') || lower.includes('anthropic.com');
+  return lower.includes('local-ai') || lower.includes('offline-ai') || lower.includes('chatgpt') || lower.includes('gemini') || lower.includes('claude') || lower.includes('openai');
 };
 
 interface Tab {
@@ -185,9 +174,7 @@ const PRESET_READING_LIST: ReadingListItem[] = [
 const PRESET_BOOKMARKS: BookmarkItem[] = [
   { id: 'bm-google', title: 'Google Search', url: 'https://www.google.com', category: 'Search' },
   { id: 'bm-pw', title: 'PhysicsWallah (PW)', url: 'https://www.pw.live', category: 'Learning Portal' },
-  { id: 'bm-chatgpt', title: 'ChatGPT AI', url: 'https://chatgpt.com', category: 'AI Assistant' },
-  { id: 'bm-gemini', title: 'Gemini AI', url: 'https://gemini.google.com', category: 'AI Assistant' },
-  { id: 'bm-claude', title: 'Claude AI', url: 'https://claude.ai', category: 'AI Assistant' },
+  { id: 'bm-localai', title: 'Local AI Assistant (Offline)', url: 'https://local-ai.offline', category: 'Local AI' },
   { id: 'bm-nptel', title: 'NPTEL Courses', url: 'https://nptel.ac.in', category: 'Courses' },
   { id: 'bm-gfg', title: 'GeeksforGeeks', url: 'https://www.geeksforgeeks.org', category: 'Docs' },
   { id: 'bm-mdn', title: 'MDN Web Docs', url: 'https://developer.mozilla.org', category: 'Docs' },
@@ -3427,35 +3414,9 @@ export const StudyBrowserView: React.FC<StudyBrowserViewProps> = ({ onShowNotifi
               }
               subject={selectedSubject}
             />
-          ) : isChatGPTUrl(activeTab?.url) ? (
-            /* CHATGPT AI ASSISTANT PORTAL */
-            <ChatGPTPortal
-              url={activeTab.url}
-              onNavigate={navigateTab}
-              onOpenExternal={(u) => window.open(u, '_blank', 'noopener,noreferrer')}
-              onEnableReaderMode={() =>
-                setTabs((prev) =>
-                  prev.map((t) => (t.id === activeTabId ? { ...t, readerMode: true } : t))
-                )
-              }
-              subject={selectedSubject}
-            />
-          ) : isGeminiUrl(activeTab?.url) ? (
-            /* GEMINI AI PORTAL */
-            <GeminiPortal
-              url={activeTab.url}
-              onNavigate={navigateTab}
-              onOpenExternal={(u) => window.open(u, '_blank', 'noopener,noreferrer')}
-              onEnableReaderMode={() =>
-                setTabs((prev) =>
-                  prev.map((t) => (t.id === activeTabId ? { ...t, readerMode: true } : t))
-                )
-              }
-              subject={selectedSubject}
-            />
-          ) : isClaudeUrl(activeTab?.url) ? (
-            /* CLAUDE AI PORTAL */
-            <ClaudePortal
+          ) : isLocalAIUrl(activeTab?.url) ? (
+            /* LOCAL AI ASSISTANT PORTAL (100% Offline • llama.cpp) */
+            <LocalAIPortal
               url={activeTab.url}
               onNavigate={navigateTab}
               onOpenExternal={(u) => window.open(u, '_blank', 'noopener,noreferrer')}

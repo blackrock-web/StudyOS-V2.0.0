@@ -9,6 +9,7 @@
  */
 
 import { safeDispatch } from './db';
+import { localModelManager } from './models/LocalModelManager';
 
 // ============================================================================
 // RESULT & OPTION INTERFACES
@@ -478,7 +479,132 @@ export function buildAIPrompt(type: AIGenerationType, sourceText: string, option
 }
 
 // ============================================================================
-// ZERO-COST PROVIDER 1: ManualImportProvider (Default)
+// 1. LOCAL OFFLINE AI PROVIDER: LocalAIProvider (Default)
+// Powered by local GGUF models & llama.cpp offline execution
+// ============================================================================
+
+export class LocalAIProvider implements IAIProvider {
+  id = 'local';
+  name = 'Local AI (llama.cpp / GGUF)';
+  meta: AIProviderMeta = {
+    id: 'local',
+    name: 'Local AI (llama.cpp)',
+    description: '100% offline, zero-cost, private inference using local GGUF models on CPU/GPU. Zero API keys, zero cloud dependency.',
+    type: 'local',
+    isConfigured: true,
+    isAvailable: true,
+  };
+
+  async generateNotes(sourceText: string, options?: AIGenerateOptions): Promise<NotesResult> {
+    const prompt = buildAIPrompt('notes', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+      topic: options?.topic,
+    });
+    const parsed = parseTextToNotes(rawOutput + '\n\n' + sourceText, options);
+    dispatchAIReviewEvent({
+      generationType: 'notes',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+
+  async generateFlashcards(sourceText: string, options?: AIGenerateOptions): Promise<FlashcardResult[]> {
+    const prompt = buildAIPrompt('flashcards', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+      topic: options?.topic,
+    });
+    const parsed = parseTextToFlashcards(rawOutput + '\n\n' + sourceText, options);
+    dispatchAIReviewEvent({
+      generationType: 'flashcards',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+
+  async generateQuiz(sourceText: string, options?: AIGenerateOptions): Promise<QuizResult> {
+    const prompt = buildAIPrompt('quiz', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+      topic: options?.topic,
+    });
+    const parsed = parseTextToQuiz(rawOutput + '\n\n' + sourceText, options);
+    dispatchAIReviewEvent({
+      generationType: 'quiz',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+
+  async generateSummary(sourceText: string, options?: { length?: 'short' | 'long'; subject?: string }): Promise<string> {
+    const prompt = buildAIPrompt('summary', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+    });
+    const parsed = parseTextToSummary(rawOutput || sourceText);
+    dispatchAIReviewEvent({
+      generationType: 'summary',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+
+  async generateMindMap(sourceText: string, options?: AIGenerateOptions): Promise<MindMapResult> {
+    const prompt = buildAIPrompt('mindmap', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+      topic: options?.topic,
+    });
+    const parsed = parseTextToMindMap(rawOutput + '\n\n' + sourceText, options);
+    dispatchAIReviewEvent({
+      generationType: 'mindmap',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+
+  async generateFormulaSheet(sourceText: string, options?: AIGenerateOptions): Promise<FormulaSheetResult> {
+    const prompt = buildAIPrompt('formulasheet', sourceText, options);
+    const rawOutput = await localModelManager.executeOfflineInference(prompt, {
+      subject: options?.subject,
+      topic: options?.topic,
+    });
+    const parsed = parseTextToFormulaSheet(rawOutput + '\n\n' + sourceText, options);
+    dispatchAIReviewEvent({
+      generationType: 'formulasheet',
+      sourceText,
+      providerId: this.id,
+      options,
+      preparedPrompt: prompt,
+      parsedResult: parsed,
+    });
+    return parsed;
+  }
+}
+
+// ============================================================================
+// 2. OFFLINE MANUAL IMPORT PROVIDER: ManualImportProvider
 // ============================================================================
 
 export class ManualImportProvider implements IAIProvider {
@@ -487,7 +613,7 @@ export class ManualImportProvider implements IAIProvider {
   meta: AIProviderMeta = {
     id: 'manual',
     name: 'Manual Import',
-    description: 'Paste structured AI text generated anywhere (ChatGPT, Claude, Gemini, textbook). 100% offline, zero-cost, no API key.',
+    description: 'Paste structured study notes, textbook excerpts, or offline revision text. 100% offline, zero-cost, no API key.',
     type: 'zero-cost',
     isConfigured: true,
     isAvailable: true,
@@ -572,284 +698,29 @@ export class ManualImportProvider implements IAIProvider {
 }
 
 // ============================================================================
-// ZERO-COST PROVIDER 2: BrowserConvenienceProvider
-// ============================================================================
-
-export class BrowserConvenienceProvider implements IAIProvider {
-  id = 'browser';
-  name = 'Browser Convenience (Clipboard + Portal)';
-  meta: AIProviderMeta = {
-    id: 'browser',
-    name: 'Browser Convenience',
-    description: 'Copies engineered prompt to clipboard and opens your web AI chat. Paste response back to parse. Zero cost, no API keys.',
-    type: 'zero-cost',
-    isConfigured: true,
-    isAvailable: true,
-  };
-
-  private async prepareAndCopyPrompt(type: AIGenerationType, sourceText: string, options?: AIGenerateOptions): Promise<string> {
-    const prompt = buildAIPrompt(type, sourceText, options);
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(prompt);
-      }
-    } catch (e) {
-      console.warn('Clipboard copy permission failed or unsupported:', e);
-    }
-    return prompt;
-  }
-
-  async generateNotes(sourceText: string, options?: AIGenerateOptions): Promise<NotesResult> {
-    const prompt = await this.prepareAndCopyPrompt('notes', sourceText, options);
-    dispatchAIReviewEvent({
-      generationType: 'notes',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: parseTextToNotes(sourceText, options),
-    });
-    return parseTextToNotes(sourceText, options);
-  }
-
-  async generateFlashcards(sourceText: string, options?: AIGenerateOptions): Promise<FlashcardResult[]> {
-    const prompt = await this.prepareAndCopyPrompt('flashcards', sourceText, options);
-    const res = parseTextToFlashcards(sourceText, options);
-    dispatchAIReviewEvent({
-      generationType: 'flashcards',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: res,
-    });
-    return res;
-  }
-
-  async generateQuiz(sourceText: string, options?: AIGenerateOptions): Promise<QuizResult> {
-    const prompt = await this.prepareAndCopyPrompt('quiz', sourceText, options);
-    const res = parseTextToQuiz(sourceText, options);
-    dispatchAIReviewEvent({
-      generationType: 'quiz',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: res,
-    });
-    return res;
-  }
-
-  async generateSummary(sourceText: string, options?: { length?: 'short' | 'long'; subject?: string }): Promise<string> {
-    const prompt = await this.prepareAndCopyPrompt('summary', sourceText, options);
-    const res = parseTextToSummary(sourceText);
-    dispatchAIReviewEvent({
-      generationType: 'summary',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: res,
-    });
-    return res;
-  }
-
-  async generateMindMap(sourceText: string, options?: AIGenerateOptions): Promise<MindMapResult> {
-    const prompt = await this.prepareAndCopyPrompt('mindmap', sourceText, options);
-    const res = parseTextToMindMap(sourceText, options);
-    dispatchAIReviewEvent({
-      generationType: 'mindmap',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: res,
-    });
-    return res;
-  }
-
-  async generateFormulaSheet(sourceText: string, options?: AIGenerateOptions): Promise<FormulaSheetResult> {
-    const prompt = await this.prepareAndCopyPrompt('formulasheet', sourceText, options);
-    const res = parseTextToFormulaSheet(sourceText, options);
-    dispatchAIReviewEvent({
-      generationType: 'formulasheet',
-      sourceText,
-      providerId: this.id,
-      options,
-      preparedPrompt: prompt,
-      parsedResult: res,
-    });
-    return res;
-  }
-}
-
-// ============================================================================
-// FUTURE API & LOCAL PROVIDER EXTENSION POINTS (STUBS)
-// ============================================================================
-
-/**
- * Extension Point: OpenAIProvider (GPT-4o / GPT-3.5)
- * Implementation guide:
- * 1. Read student API key from secureStorage.ts (`secureStorage.getItem('openai_api_key')`)
- * 2. Send fetch request to https://api.openai.com/v1/chat/completions with JSON schema
- * 3. Return typed result directly without manual paste step.
- */
-export class OpenAIProviderStub implements IAIProvider {
-  id = 'openai';
-  name = 'OpenAI (GPT-4o)';
-  meta: AIProviderMeta = {
-    id: 'openai',
-    name: 'OpenAI (GPT-4o)',
-    description: 'Direct API generation using OpenAI GPT-4o with student API key stored in secureStorage.',
-    type: 'api',
-    isConfigured: false,
-    isAvailable: false,
-    comingSoon: true,
-  };
-
-  async generateNotes(): Promise<NotesResult> { throw new Error('OpenAI Provider Coming Soon'); }
-  async generateFlashcards(): Promise<FlashcardResult[]> { throw new Error('OpenAI Provider Coming Soon'); }
-  async generateQuiz(): Promise<QuizResult> { throw new Error('OpenAI Provider Coming Soon'); }
-  async generateSummary(): Promise<string> { throw new Error('OpenAI Provider Coming Soon'); }
-  async generateMindMap(): Promise<MindMapResult> { throw new Error('OpenAI Provider Coming Soon'); }
-  async generateFormulaSheet(): Promise<FormulaSheetResult> { throw new Error('OpenAI Provider Coming Soon'); }
-}
-
-/**
- * Extension Point: GeminiAPIProvider (Google AI Studio)
- * Implementation guide:
- * 1. Read student API key from secureStorage.ts (`secureStorage.getItem('gemini_api_key')`)
- * 2. Send fetch request to Google GenAI REST API endpoints or server proxy route
- * 3. Return typed result directly.
- */
-export class GeminiProviderStub implements IAIProvider {
-  id = 'gemini';
-  name = 'Google Gemini API';
-  meta: AIProviderMeta = {
-    id: 'gemini',
-    name: 'Google Gemini API',
-    description: 'Direct API generation using Google Gemini Flash/Pro model with student API key.',
-    type: 'api',
-    isConfigured: false,
-    isAvailable: false,
-    comingSoon: true,
-  };
-
-  async generateNotes(): Promise<NotesResult> { throw new Error('Gemini Provider Coming Soon'); }
-  async generateFlashcards(): Promise<FlashcardResult[]> { throw new Error('Gemini Provider Coming Soon'); }
-  async generateQuiz(): Promise<QuizResult> { throw new Error('Gemini Provider Coming Soon'); }
-  async generateSummary(): Promise<string> { throw new Error('Gemini Provider Coming Soon'); }
-  async generateMindMap(): Promise<MindMapResult> { throw new Error('Gemini Provider Coming Soon'); }
-  async generateFormulaSheet(): Promise<FormulaSheetResult> { throw new Error('Gemini Provider Coming Soon'); }
-}
-
-/**
- * Extension Point: AnthropicProvider (Claude 3.5 Sonnet)
- * Implementation guide:
- * 1. Read student API key from secureStorage.ts (`secureStorage.getItem('anthropic_api_key')`)
- * 2. Call Anthropic Messages API.
- */
-export class AnthropicProviderStub implements IAIProvider {
-  id = 'anthropic';
-  name = 'Anthropic (Claude API)';
-  meta: AIProviderMeta = {
-    id: 'anthropic',
-    name: 'Anthropic (Claude API)',
-    description: 'Direct API generation using Claude 3.5 Sonnet with student API key.',
-    type: 'api',
-    isConfigured: false,
-    isAvailable: false,
-    comingSoon: true,
-  };
-
-  async generateNotes(): Promise<NotesResult> { throw new Error('Anthropic Provider Coming Soon'); }
-  async generateFlashcards(): Promise<FlashcardResult[]> { throw new Error('Anthropic Provider Coming Soon'); }
-  async generateQuiz(): Promise<QuizResult> { throw new Error('Anthropic Provider Coming Soon'); }
-  async generateSummary(): Promise<string> { throw new Error('Anthropic Provider Coming Soon'); }
-  async generateMindMap(): Promise<MindMapResult> { throw new Error('Anthropic Provider Coming Soon'); }
-  async generateFormulaSheet(): Promise<FormulaSheetResult> { throw new Error('Anthropic Provider Coming Soon'); }
-}
-
-/**
- * Extension Point: OllamaProvider (Local Server at localhost:11434)
- * Implementation guide:
- * 1. Send fetch to http://localhost:11434/api/generate
- * 2. Zero-cost 100% offline local model execution.
- */
-export class OllamaProviderStub implements IAIProvider {
-  id = 'ollama';
-  name = 'Ollama (Local LLM)';
-  meta: AIProviderMeta = {
-    id: 'ollama',
-    name: 'Ollama (Local LLM)',
-    description: 'Fully offline local inference running on localhost:11434 with zero data leaving machine.',
-    type: 'local',
-    isConfigured: false,
-    isAvailable: false,
-    comingSoon: true,
-  };
-
-  async generateNotes(): Promise<NotesResult> { throw new Error('Ollama Provider Coming Soon'); }
-  async generateFlashcards(): Promise<FlashcardResult[]> { throw new Error('Ollama Provider Coming Soon'); }
-  async generateQuiz(): Promise<QuizResult> { throw new Error('Ollama Provider Coming Soon'); }
-  async generateSummary(): Promise<string> { throw new Error('Ollama Provider Coming Soon'); }
-  async generateMindMap(): Promise<MindMapResult> { throw new Error('Ollama Provider Coming Soon'); }
-  async generateFormulaSheet(): Promise<FormulaSheetResult> { throw new Error('Ollama Provider Coming Soon'); }
-}
-
-/**
- * Extension Point: LMStudioProvider (Local OpenAI-compatible server at localhost:1234)
- */
-export class LMStudioProviderStub implements IAIProvider {
-  id = 'lmstudio';
-  name = 'LM Studio (Local Server)';
-  meta: AIProviderMeta = {
-    id: 'lmstudio',
-    name: 'LM Studio (Local Server)',
-    description: 'Local OpenAI-compatible server running on localhost:1234.',
-    type: 'local',
-    isConfigured: false,
-    isAvailable: false,
-    comingSoon: true,
-  };
-
-  async generateNotes(): Promise<NotesResult> { throw new Error('LM Studio Provider Coming Soon'); }
-  async generateFlashcards(): Promise<FlashcardResult[]> { throw new Error('LM Studio Provider Coming Soon'); }
-  async generateQuiz(): Promise<QuizResult> { throw new Error('LM Studio Provider Coming Soon'); }
-  async generateSummary(): Promise<string> { throw new Error('LM Studio Provider Coming Soon'); }
-  async generateMindMap(): Promise<MindMapResult> { throw new Error('LM Studio Provider Coming Soon'); }
-  async generateFormulaSheet(): Promise<FormulaSheetResult> { throw new Error('LM Studio Provider Coming Soon'); }
-}
-
-// ============================================================================
 // PROVIDER REGISTRY & MANAGER
 // ============================================================================
 
 class AIProviderRegistry {
   private providers: Map<string, IAIProvider> = new Map();
-  private activeProviderId = 'manual';
+  private activeProviderId = 'local';
 
   constructor() {
-    // Register active zero-cost providers
+    // Register 100% offline, zero-cloud providers
+    this.register(new LocalAIProvider());
     this.register(new ManualImportProvider());
-    this.register(new BrowserConvenienceProvider());
 
-    // Register extension stubs
-    this.register(new OpenAIProviderStub());
-    this.register(new GeminiProviderStub());
-    this.register(new AnthropicProviderStub());
-    this.register(new OllamaProviderStub());
-    this.register(new LMStudioProviderStub());
-
-    // Restore saved provider from storage
+    // Restore saved provider from storage if valid
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('studyos_active_ai_provider');
-        if (saved && (saved === 'manual' || saved === 'browser')) {
+        if (saved && (saved === 'local' || saved === 'manual')) {
           this.activeProviderId = saved;
+        } else {
+          this.activeProviderId = 'local';
         }
       } catch (e) {
-        // Fallback to manual
+        this.activeProviderId = 'local';
       }
     }
   }
@@ -869,7 +740,8 @@ class AIProviderRegistry {
   setActiveProviderId(id: string): void {
     const provider = this.providers.get(id);
     if (!provider) {
-      console.warn(`Provider ${id} not found, ignoring.`);
+      console.warn(`Provider ${id} not found, defaulting to local.`);
+      this.activeProviderId = 'local';
       return;
     }
     this.activeProviderId = id;
@@ -884,7 +756,7 @@ class AIProviderRegistry {
   }
 
   getActiveProvider(): IAIProvider {
-    return this.providers.get(this.activeProviderId) || this.providers.get('manual')!;
+    return this.providers.get(this.activeProviderId) || this.providers.get('local')!;
   }
 
   getAllProviders(): AIProviderMeta[] {

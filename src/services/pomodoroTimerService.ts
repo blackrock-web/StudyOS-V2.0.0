@@ -2,6 +2,7 @@ import { studyCoachService } from './studyCoachService';
 import { syncService } from './syncService';
 import { activityEventService } from './activityEventService';
 import { analyticsService } from './analyticsService';
+import { db } from './db';
 
 export type PomodoroMode = 'focus' | 'break' | 'shortBreak' | 'longBreak';
 export type FocusSessionState = 'FOCUS_RUNNING' | 'BREAK_RUNNING' | 'FOCUS_PAUSED' | 'COMPLETED';
@@ -67,9 +68,20 @@ class PomodoroTimerService {
 
   private listeners: Set<TimerListener> = new Set();
   private timerInterval: any = null;
+  private lastHeartbeatMs = 0;
 
   constructor() {
     this.startInterval();
+    if (typeof window !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && this.state.isRunning && this.state.mode === 'focus') {
+          const settings = db.getSettings();
+          if (!settings?.allowBackgroundFocusTimer) {
+            this.pause();
+          }
+        }
+      });
+    }
   }
 
   public getState(): PomodoroTimerState {
@@ -358,12 +370,20 @@ class PomodoroTimerService {
       this.state.completedSessions += 1;
       this.state.totalFocusMinsToday += completedMins;
 
-      // Record focus session into syncService (Dashboard, Planner, Analytics, Activity Log)
+      // Record focus session into analyticsService and syncService
       try {
         const breakMins =
           this.state.completedSessions % 4 === 0
             ? this.state.longBreakMinutes
             : this.state.shortBreakMinutes || this.state.breakMinutes;
+
+        analyticsService.trackFocusSession(
+          this.state.selectedSubjectId || 'General Studies',
+          completedMins,
+          0,
+          'Pomodoro Focus'
+        );
+
         syncService.recordPomodoroSession({
           durationMinutes: completedMins,
           breakMinutes: 0, // break recorded when break ends
@@ -423,9 +443,19 @@ class PomodoroTimerService {
   private startInterval() {
     if (typeof window === 'undefined') return;
     if (this.timerInterval) clearInterval(this.timerInterval);
+    this.lastHeartbeatMs = Date.now();
 
     this.timerInterval = setInterval(() => {
       if (!this.state.isRunning) return;
+
+      const now = Date.now();
+      const delta = now - this.lastHeartbeatMs;
+      this.lastHeartbeatMs = now;
+
+      // Sleep / clock jump detection: if gap > 5 seconds, do not accumulate sleep time
+      if (delta > 5000) {
+        return;
+      }
 
       if (this.state.breakStopwatchActive) {
         this.state.breakElapsedSecs = (this.state.breakElapsedSecs || 0) + 1;

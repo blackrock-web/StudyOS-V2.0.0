@@ -93,6 +93,20 @@ class AuditLogger {
     this.record({ action, details, username, severity, status });
   }
 
+  public logEvent(
+    inputOrAction: AuditLogInput | string,
+    details?: string,
+    severityOrUsername?: string,
+    arg4?: string,
+    arg5?: string
+  ): void {
+    if (typeof inputOrAction === 'object') {
+      this.record(inputOrAction);
+    } else {
+      this.log(inputOrAction, details || '', severityOrUsername, arg4, arg5);
+    }
+  }
+
   public getLogs(): AuditLogEntry[] {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);

@@ -126,6 +126,7 @@ export const DEFAULT_SETTINGS: DesktopSettings = {
   weeklyGoalHours: 48,
   autoSaveIntervalMs: 10000,
   offlineMode: true,
+  allowBackgroundFocusTimer: false,
   soundNotifications: true,
   activeProfile: 'John Doe',
   showStudyBrowser: true, // Visible in navigation by default
@@ -280,7 +281,7 @@ const SEED_FLASHCARDS: Flashcard[] = [
   },
 ];
 
-// Initial Seed PDFs
+// Initial Seed PDFs (start at 0 reading progress / minutes)
 const SEED_PDFS: PDFDocumentItem[] = [
   {
     id: 'pdf-1',
@@ -289,8 +290,8 @@ const SEED_PDFS: PDFDocumentItem[] = [
     chapter: 'Tensorix 7-Month Master Strategy',
     fileSize: '4.2 MB',
     pageCount: 34,
-    readProgressPages: 18,
-    readingTimeMinutes: 120,
+    readProgressPages: 0,
+    readingTimeMinutes: 0,
     indexedChapters: [
       'Executive Summary',
       'Syllabus Categorization (Tiers 1-4)',
@@ -298,8 +299,8 @@ const SEED_PDFS: PDFDocumentItem[] = [
       'Depth vs Breadth Strategy',
       'Performance Benchmarking',
     ],
-    notesExtractedCount: 14,
-    flashcardsExtractedCount: 8,
+    notesExtractedCount: 0,
+    flashcardsExtractedCount: 0,
     uploadedAt: '2026-07-20',
     contentSnippet: 'Target Exam: GATE 2027 (Feb 1-15, 2027). Weekly Commitment: 45-50 hrs/week. First contact deadline: Week 20 (Nov 30, 2026).',
   },
@@ -310,16 +311,16 @@ const SEED_PDFS: PDFDocumentItem[] = [
     chapter: 'Analysis of Algorithms',
     fileSize: '8.1 MB',
     pageCount: 45,
-    readProgressPages: 25,
-    readingTimeMinutes: 95,
+    readProgressPages: 0,
+    readingTimeMinutes: 0,
     indexedChapters: [
       'Substitution Method',
       'Recursion Tree Method',
       'Master Method for Solving Recurrences',
       'Akra-Bazzi Theorem',
     ],
-    notesExtractedCount: 9,
-    flashcardsExtractedCount: 6,
+    notesExtractedCount: 0,
+    flashcardsExtractedCount: 0,
     uploadedAt: '2026-07-21',
     contentSnippet: 'The master method provides a cookbook method for solving recurrences of the form T(n) = aT(n/b) + f(n)...',
   },
@@ -334,48 +335,8 @@ export const SEED_MCQS: QuestionMCQ[] = [];
 // Initial Mistakes (clean slate - user records actual test/practice mistakes)
 export const SEED_MISTAKES: MistakeEntry[] = [];
 
-// Initial Activity Log
-const SEED_ACTIVITY: StudyActivityLog[] = [
-  {
-    date: '2026-07-21',
-    studyMinutes: 380,
-    idleMinutes: 25,
-    breakMinutes: 45,
-    lectureMinutes: 180,
-    questionSolvingMinutes: 90,
-    revisionMinutes: 45,
-    flashcardsMinutes: 25,
-    pdfReadingMinutes: 40,
-    browserMinutes: 210,
-    productivityScore: 88,
-  },
-  {
-    date: '2026-07-22',
-    studyMinutes: 420,
-    idleMinutes: 20,
-    breakMinutes: 50,
-    lectureMinutes: 210,
-    questionSolvingMinutes: 110,
-    revisionMinutes: 50,
-    flashcardsMinutes: 30,
-    pdfReadingMinutes: 20,
-    browserMinutes: 240,
-    productivityScore: 92,
-  },
-  {
-    date: '2026-07-23',
-    studyMinutes: 240,
-    idleMinutes: 15,
-    breakMinutes: 30,
-    lectureMinutes: 120,
-    questionSolvingMinutes: 60,
-    revisionMinutes: 30,
-    flashcardsMinutes: 15,
-    pdfReadingMinutes: 15,
-    browserMinutes: 130,
-    productivityScore: 90,
-  },
-];
+// Initial Activity Log (Starts strictly at zero for all new users)
+const SEED_ACTIVITY: StudyActivityLog[] = [];
 
 // Seed Multi-Exams
 export function getSeedExams(): ExamItem[] {

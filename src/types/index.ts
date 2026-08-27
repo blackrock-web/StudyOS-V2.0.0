@@ -368,6 +368,7 @@ export interface DesktopSettings {
   autoSaveIntervalMs: number;
   inactivityAutoLockMins?: number; // 0, 5, 10, 15, 30
   offlineMode: boolean;
+  allowBackgroundFocusTimer?: boolean; // When false (default), focus timer pauses if window is minimized/hidden
   soundNotifications: boolean;
   activeProfile: string;
   lastRolloverDate?: string;
@@ -1016,5 +1017,76 @@ export interface RAGQueryAnswer {
   suggestedQuestions?: Array<{ question: string; options: string[]; answer: string }>;
   timestamp: string;
 }
+
+// --- NETWORK ACCESS GATEWAY TYPES ---
+export type NetworkAccessStatus = 'LOCKED' | 'UNLOCKED' | 'OPERATION_IN_PROGRESS';
+export type AuthorizedOperation = 'update' | 'model-download' | 'none';
+
+export interface NetworkGatewayState {
+  status: NetworkAccessStatus;
+  authorizedOperation: AuthorizedOperation;
+  unlockedAt: string | null;
+  expiresAt: string | null;
+  reason: string | null;
+  hasConfiguredPin: boolean;
+  activeSessionDurationSecs: number;
+}
+
+export interface NetworkAllowlistRule {
+  operation: AuthorizedOperation;
+  allowedDomains: string[];
+  description: string;
+}
+
+// --- LOCAL LLM & AI MODEL TYPES ---
+export type ModelStatus = 'not-downloaded' | 'downloading' | 'verifying' | 'installed' | 'active' | 'error';
+
+export interface LocalModelDescriptor {
+  id: string;
+  name: string;
+  tagline: string;
+  parameterSize: string; // e.g. '135M', '0.5B', '1.1B'
+  diskSizeFormatted: string; // e.g. '80 MB', '350 MB'
+  diskSizeBytes: number;
+  sha256: string;
+  downloadUrl: string;
+  license: string;
+  format: 'GGUF' | 'ONNX' | 'WebLLM' | 'Ollama';
+  quantization: string; // e.g. 'Q4_K_M', 'q4f16_1', 'int8'
+  recommendedRam: string;
+  inferenceSpeed: string; // e.g. '~45 tokens/sec'
+  strengths: string[];
+  offlineReady: boolean;
+  installedAt?: string;
+  filePath?: string;
+  status: ModelStatus;
+  downloadProgress?: number;
+  downloadSpeed?: string;
+  bytesDownloaded?: number;
+  error?: string;
+}
+
+// --- APP DESTRUCTION TYPES ---
+export interface DestructionManifest {
+  installedFiles: string[];
+  installedDirectories: string[];
+  userDataPaths: string[];
+  cachePaths: string[];
+  logPaths: string[];
+  modelsDirectory: string;
+  databaseFiles: string[];
+  desktopShortcuts: string[];
+  startMenuEntries: string[];
+  dotDesktopFiles: string[];
+}
+
+export interface DestructionProgressState {
+  phase: 'idle' | 'warning' | 'pin_auth' | 'confirm_text' | 'executing' | 'completed' | 'failed';
+  currentStep: string;
+  percent: number;
+  deletedItems: string[];
+  error?: string;
+}
+
 
 

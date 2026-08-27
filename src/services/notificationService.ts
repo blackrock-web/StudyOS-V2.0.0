@@ -151,26 +151,3 @@ export const notificationService = {
     emit();
   },
 };
-
-declare global {
-  interface Window {
-    studyosDesktop?: {
-      showNotification?: (title: string, body: string) => void;
-      getStudyMode?: () => Promise<boolean>;
-      setStudyMode?: (mode: boolean) => Promise<boolean>;
-      openDownloadedFile?: (filePath: string) => Promise<{ success: boolean; error?: string }>;
-      onDownloadStarted?: (
-        callback: (data: { id: string; filename: string; url: string; savePath: string; totalBytes: number }) => void
-      ) => () => void;
-      onDownloadProgress?: (
-        callback: (data: { id: string; receivedBytes: number; totalBytes: number }) => void
-      ) => () => void;
-      onDownloadCompleted?: (
-        callback: (data: { id: string; filename: string; savePath: string }) => void
-      ) => () => void;
-      onDownloadFailed?: (
-        callback: (data: { id: string; error?: string }) => void
-      ) => () => void;
-    };
-  }
-}
