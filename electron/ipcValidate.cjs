@@ -147,6 +147,30 @@ const SCHEMAS = {
       filePath: { type: 'string', maxLen: 1000 },
     },
   },
+  'studyos:updater-check': {
+    type: 'object',
+    optional: true,
+    additionalProperties: false,
+    properties: {},
+  },
+  'studyos:updater-download': {
+    type: 'object',
+    optional: true,
+    additionalProperties: false,
+    properties: {},
+  },
+  'studyos:updater-install': {
+    type: 'object',
+    optional: true,
+    additionalProperties: false,
+    properties: {},
+  },
+  'studyos:updater-get-status': {
+    type: 'object',
+    optional: true,
+    additionalProperties: false,
+    properties: {},
+  },
 };
 
 function validateIpc(channel, payload) {

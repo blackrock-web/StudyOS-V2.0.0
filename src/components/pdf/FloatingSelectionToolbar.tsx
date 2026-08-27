@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Highlighter,
   FileText,
@@ -11,9 +11,20 @@ import {
   Tag,
   CalendarRange,
   X,
-  Sparkles
+  Sparkles,
+  StickyNote,
+  ChevronDown
 } from "lucide-react";
 import { getActiveProvider } from "../../services/aiProvider";
+
+const HIGHLIGHT_COLORS = [
+  { name: "Yellow", value: "#fde047", textClass: "text-yellow-400", bgClass: "bg-yellow-400" },
+  { name: "Green", value: "#86efac", textClass: "text-green-400", bgClass: "bg-green-400" },
+  { name: "Blue", value: "#93c5fd", textClass: "text-blue-400", bgClass: "bg-blue-400" },
+  { name: "Pink", value: "#f472b6", textClass: "text-pink-400", bgClass: "bg-pink-400" },
+  { name: "Purple", value: "#c084fc", textClass: "text-purple-400", bgClass: "bg-purple-400" },
+  { name: "Orange", value: "#fdba74", textClass: "text-orange-400", bgClass: "bg-orange-400" },
+];
 
 interface FloatingSelectionToolbarProps {
   x: number;
@@ -21,6 +32,8 @@ interface FloatingSelectionToolbarProps {
   selectedText: string;
   hasRect: boolean;
   onApplyMarkup: (type: "highlight" | "underline" | "strikethrough") => void;
+  onApplyColoredHighlight?: (color: string) => void;
+  onAddStickyNote?: () => void;
   onCreateNote: () => void;
   onCreateFlashcard: () => void;
   onCreateFormula: () => void;
@@ -40,6 +53,8 @@ export const FloatingSelectionToolbar: React.FC<FloatingSelectionToolbarProps> =
   selectedText,
   hasRect,
   onApplyMarkup,
+  onApplyColoredHighlight,
+  onAddStickyNote,
   onCreateNote,
   onCreateFlashcard,
   onCreateFormula,
@@ -52,6 +67,8 @@ export const FloatingSelectionToolbar: React.FC<FloatingSelectionToolbarProps> =
   onCollectSelection,
   onClose,
 }) => {
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
   // Setup Esc key listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -72,14 +89,63 @@ export const FloatingSelectionToolbar: React.FC<FloatingSelectionToolbarProps> =
       }}
       className="floating-selection-toolbar absolute z-[999] flex items-center bg-slate-900/95 backdrop-blur-md px-2 py-1 rounded-2xl border border-slate-700/60 shadow-2xl select-none text-white animate-fadeIn"
     >
-      <div className="flex items-center gap-0.5 border-r border-slate-700/60 pr-1.5 mr-1.5">
+      {/* Highlighting & Color Palette */}
+      <div className="flex items-center gap-0.5 border-r border-slate-700/60 pr-1.5 mr-1.5 relative">
         <button
-          onClick={() => onApplyMarkup("highlight")}
-          title="Highlight Text"
-          className="p-1.5 hover:bg-slate-800 rounded-lg text-amber-400 hover:text-amber-300 transition-all cursor-pointer"
+          onClick={() => {
+            if (onApplyColoredHighlight) {
+              onApplyColoredHighlight("#fde047");
+            } else {
+              onApplyMarkup("highlight");
+            }
+          }}
+          title="Highlight Text (Yellow)"
+          className="p-1.5 hover:bg-slate-800 rounded-lg text-yellow-400 hover:text-yellow-300 transition-all cursor-pointer"
         >
           <Highlighter className="h-3.5 w-3.5" />
         </button>
+
+        {/* Color Palette Toggle */}
+        <button
+          onClick={() => setShowColorPicker(!showColorPicker)}
+          title="Choose Highlight Color"
+          className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+        >
+          <ChevronDown className="h-3 w-3" />
+        </button>
+
+        {showColorPicker && (
+          <div className="absolute top-full left-0 mt-2 p-1.5 bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 z-50 animate-fadeIn">
+            {HIGHLIGHT_COLORS.map((col) => (
+              <button
+                key={col.value}
+                onClick={() => {
+                  if (onApplyColoredHighlight) {
+                    onApplyColoredHighlight(col.value);
+                  } else {
+                    onApplyMarkup("highlight");
+                  }
+                  setShowColorPicker(false);
+                }}
+                title={`Highlight in ${col.name}`}
+                className="w-4 h-4 rounded-full border border-white/20 hover:scale-125 transition-transform cursor-pointer"
+                style={{ backgroundColor: col.value }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Sticky Note Pin */}
+        {onAddStickyNote && (
+          <button
+            onClick={onAddStickyNote}
+            title="Attach Sticky Note to Selection"
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-amber-300 hover:text-amber-200 transition-all cursor-pointer"
+          >
+            <StickyNote className="h-3.5 w-3.5" />
+          </button>
+        )}
+
         <button
           onClick={onCopyText}
           title="Copy to Clipboard"
@@ -191,3 +257,4 @@ export const FloatingSelectionToolbar: React.FC<FloatingSelectionToolbarProps> =
     </div>
   );
 };
+

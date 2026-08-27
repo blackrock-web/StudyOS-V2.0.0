@@ -24,6 +24,18 @@
       "electron/**/*",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "studyos-org",
+      "repo": "studyos-desktop"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "StudyOS Desktop"
+    },
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -49,11 +61,12 @@
     }
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^0.344.0",
+    "pdfjs-dist": "^3.11.174",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.344.0",
-    "recharts": "^2.12.2",
-    "pdfjs-dist": "^3.11.174"
+    "recharts": "^2.12.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

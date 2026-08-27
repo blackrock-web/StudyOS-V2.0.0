@@ -20,6 +20,11 @@ export interface StudyOSDesktopAPI {
   setKioskMode?: (flag: boolean) => Promise<boolean>;
   setExamMode?: (flag: boolean, allowlist?: string[]) => Promise<boolean>;
   onMenuExportBackup: (cb: () => void) => () => void;
+  checkForUpdates?: () => Promise<{ ok: boolean; error?: string; state?: any }>;
+  downloadUpdate?: () => Promise<{ ok: boolean; error?: string; state?: any }>;
+  installUpdate?: () => Promise<{ ok: boolean; error?: string }>;
+  getUpdateStatus?: () => Promise<any>;
+  onUpdateStatusChanged?: (cb: (state: any) => void) => () => void;
 }
 
 declare global {

@@ -263,6 +263,40 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           );
         }
 
+        // Sticky Notes
+        if (ann.type === "sticky-note" && ann.coordinates) {
+          return (
+            <g
+              key={ann.id}
+              className="cursor-pointer group"
+              onClick={(e) => {
+                if (isEraserTool) {
+                  handleEraserClick(ann.id, e);
+                }
+              }}
+            >
+              <rect
+                x={ann.coordinates.x}
+                y={ann.coordinates.y}
+                width={26}
+                height={26}
+                rx={5}
+                fill={ann.color || "#fef08a"}
+                stroke="#ca8a04"
+                strokeWidth={1.5}
+                className="filter drop-shadow transition-transform hover:scale-110"
+              />
+              <path
+                d={`M ${ann.coordinates.x + 7} ${ann.coordinates.y + 6} h 12 a 2 2 0 0 1 2 2 v 10 a 2 2 0 0 1 -2 2 h -12 a 2 2 0 0 1 -2 -2 v -10 a 2 2 0 0 1 2 -2 z M ${ann.coordinates.x + 7} ${ann.coordinates.y + 10} h 8 M ${ann.coordinates.x + 7} ${ann.coordinates.y + 14} h 5`}
+                stroke="#854d0e"
+                strokeWidth={1.2}
+                fill="none"
+                strokeLinecap="round"
+              />
+            </g>
+          );
+        }
+
         // Geometric Arrows
         if (ann.type === "arrow" && ann.points && ann.points.length >= 2 && ann.points[0] && ann.points[1]) {
           const p1 = ann.points[0];

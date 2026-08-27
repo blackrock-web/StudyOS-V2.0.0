@@ -213,6 +213,7 @@ function createMainWindow() {
     }
     mainWindow.show();
     mainWindow.focus();
+    scheduleInitialUpdateCheck();
   });
 
   mainWindow.on('closed', () => {
@@ -642,3 +643,206 @@ ipcMain.on('studyos:show-notification', (event, payload) => {
     /* ignore */
   }
 });
+
+// ============================================================================
+// AUTOMATIC UPDATE SYSTEM (Public GitHub Releases via electron-updater)
+// ============================================================================
+let autoUpdater = null;
+try {
+  const updaterModule = require('electron-updater');
+  autoUpdater = updaterModule.autoUpdater;
+  if (autoUpdater) {
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowDowngrade = false;
+  }
+} catch (err) {
+  console.warn('[StudyOS Updater] electron-updater could not be initialized:', err?.message || err);
+}
+
+let currentUpdateState = {
+  status: 'idle', // 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'upToDate' | 'error'
+  currentVersion: app.getVersion() || '1.0.0',
+  availableVersion: null,
+  releaseNotes: null,
+  releaseName: null,
+  releaseDate: null,
+  progress: 0,
+  error: null,
+  lastCheckedAt: null,
+};
+
+function broadcastUpdateStatus() {
+  currentUpdateState.currentVersion = app.getVersion() || '1.0.0';
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.webContents.send('studyos:updater-status-changed', { ...currentUpdateState });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+if (autoUpdater) {
+  autoUpdater.on('checking-for-update', () => {
+    currentUpdateState.status = 'checking';
+    currentUpdateState.error = null;
+    currentUpdateState.lastCheckedAt = new Date().toISOString();
+    broadcastUpdateStatus();
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    currentUpdateState.status = 'available';
+    currentUpdateState.availableVersion = info.version;
+    currentUpdateState.releaseName = info.releaseName || `StudyOS v${info.version}`;
+    currentUpdateState.releaseDate = info.releaseDate || new Date().toISOString();
+    let notes = '';
+    if (typeof info.releaseNotes === 'string') {
+      notes = info.releaseNotes;
+    } else if (Array.isArray(info.releaseNotes)) {
+      notes = info.releaseNotes.map((n) => (n && typeof n === 'object' ? n.note : String(n))).join('\n');
+    }
+    currentUpdateState.releaseNotes = notes || 'New update available from GitHub Releases.';
+    currentUpdateState.error = null;
+    broadcastUpdateStatus();
+  });
+
+  autoUpdater.on('update-not-available', (_info) => {
+    currentUpdateState.status = 'upToDate';
+    currentUpdateState.availableVersion = null;
+    currentUpdateState.error = null;
+    broadcastUpdateStatus();
+  });
+
+  autoUpdater.on('error', (err) => {
+    // Gracefully handle offline or unreachable network
+    currentUpdateState.status = 'error';
+    const msg = err && err.message ? err.message : 'Network unreachable or no release available';
+    currentUpdateState.error = msg;
+    broadcastUpdateStatus();
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    currentUpdateState.status = 'downloading';
+    currentUpdateState.progress = Math.round(progressObj?.percent || 0);
+    broadcastUpdateStatus();
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    currentUpdateState.status = 'downloaded';
+    currentUpdateState.progress = 100;
+    currentUpdateState.availableVersion = info.version;
+    broadcastUpdateStatus();
+  });
+}
+
+// Safe IPC Handlers for Updater
+ipcMain.handle('studyos:updater-check', async (event) => {
+  if (!assertSender(event)) return { ok: false, error: 'Unauthorized' };
+  currentUpdateState.lastCheckedAt = new Date().toISOString();
+  currentUpdateState.error = null;
+
+  if (!app.isPackaged) {
+    // In dev mode, return upToDate or simulated test without crashing
+    currentUpdateState.status = 'upToDate';
+    broadcastUpdateStatus();
+    return { ok: true, state: { ...currentUpdateState } };
+  }
+
+  if (!autoUpdater) {
+    currentUpdateState.status = 'error';
+    currentUpdateState.error = 'Updater module unavailable';
+    broadcastUpdateStatus();
+    return { ok: false, error: 'Updater module unavailable', state: { ...currentUpdateState } };
+  }
+
+  try {
+    currentUpdateState.status = 'checking';
+    broadcastUpdateStatus();
+    const result = await autoUpdater.checkForUpdates();
+    return { ok: true, result: result ? { version: result.updateInfo?.version } : null, state: { ...currentUpdateState } };
+  } catch (err) {
+    currentUpdateState.status = 'error';
+    currentUpdateState.error = err?.message || 'Check failed (offline or server unreachable)';
+    broadcastUpdateStatus();
+    return { ok: false, error: currentUpdateState.error, state: { ...currentUpdateState } };
+  }
+});
+
+ipcMain.handle('studyos:updater-download', async (event) => {
+  if (!assertSender(event)) return { ok: false, error: 'Unauthorized' };
+  if (!app.isPackaged) {
+    currentUpdateState.status = 'downloaded';
+    currentUpdateState.progress = 100;
+    broadcastUpdateStatus();
+    return { ok: true, state: { ...currentUpdateState } };
+  }
+
+  if (!autoUpdater) {
+    return { ok: false, error: 'Updater not available' };
+  }
+
+  try {
+    currentUpdateState.status = 'downloading';
+    currentUpdateState.progress = 0;
+    broadcastUpdateStatus();
+    await autoUpdater.downloadUpdate();
+    return { ok: true, state: { ...currentUpdateState } };
+  } catch (err) {
+    currentUpdateState.status = 'error';
+    currentUpdateState.error = err?.message || 'Download failed';
+    broadcastUpdateStatus();
+    return { ok: false, error: currentUpdateState.error, state: { ...currentUpdateState } };
+  }
+});
+
+ipcMain.handle('studyos:updater-install', async (event) => {
+  if (!assertSender(event)) return { ok: false, error: 'Unauthorized' };
+  if (!app.isPackaged) {
+    currentUpdateState.status = 'installing';
+    broadcastUpdateStatus();
+    return { ok: true };
+  }
+
+  if (!autoUpdater) {
+    return { ok: false, error: 'Updater not available' };
+  }
+
+  try {
+    currentUpdateState.status = 'installing';
+    broadcastUpdateStatus();
+    // Quit and install silently on restart
+    setImmediate(() => {
+      autoUpdater.quitAndInstall(false, true);
+    });
+    return { ok: true };
+  } catch (err) {
+    currentUpdateState.status = 'error';
+    currentUpdateState.error = err?.message || 'Installation trigger failed';
+    broadcastUpdateStatus();
+    return { ok: false, error: currentUpdateState.error };
+  }
+});
+
+ipcMain.handle('studyos:updater-get-status', (event) => {
+  if (!assertSender(event)) return null;
+  currentUpdateState.currentVersion = app.getVersion() || '1.0.0';
+  return { ...currentUpdateState };
+});
+
+// Non-blocking auto-check with delay after window is shown
+function scheduleInitialUpdateCheck() {
+  if (app.isPackaged && autoUpdater) {
+    setTimeout(() => {
+      try {
+        autoUpdater.checkForUpdates().catch(() => {
+          // Silent offline catch
+        });
+      } catch {
+        /* ignore */
+      }
+    }, 8000); // 8 second startup delay
+  }
+}
+

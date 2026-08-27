@@ -24,6 +24,7 @@ import {
   Palette,
   FileDown,
   Brain,
+  FileText,
 } from "lucide-react";
 
 interface PDFToolbarProps {
@@ -40,6 +41,7 @@ interface PDFToolbarProps {
   onToggleSnapToPages?: () => void;
   onToggleAnnotationBar?: () => void;
   onExportStudyGuide?: () => void;
+  onExportSummaryMarkdown?: () => void;
   onOpenRAGStudio?: () => void;
   onPageChange: (page: number) => void;
   onZoomIn: () => void;
@@ -80,6 +82,7 @@ export const PDFToolbar: React.FC<PDFToolbarProps> = ({
   onToggleSnapToPages,
   onToggleAnnotationBar,
   onExportStudyGuide,
+  onExportSummaryMarkdown,
   onOpenRAGStudio,
   onPageChange,
   onZoomIn,
@@ -391,6 +394,18 @@ export const PDFToolbar: React.FC<PDFToolbarProps> = ({
           >
             <FileDown className="h-3.5 w-3.5" />
             <span className="hidden md:inline">Export PDF</span>
+          </button>
+        )}
+
+        {/* Summary Markdown Export Button */}
+        {onExportSummaryMarkdown && (
+          <button
+            onClick={onExportSummaryMarkdown}
+            title="Generate & Download Structured Markdown Summary Report"
+            className="p-1.5 rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer font-bold flex items-center gap-1 text-xs px-2 border border-emerald-200/60 shadow-xs"
+          >
+            <FileText className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Summary</span>
           </button>
         )}
 

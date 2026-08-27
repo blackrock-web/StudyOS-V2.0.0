@@ -86,4 +86,15 @@ contextBridge.exposeInMainWorld('studyosDesktop', {
     ipcRenderer.on('studyos:menu-export-backup', handler);
     return () => ipcRenderer.removeListener('studyos:menu-export-backup', handler);
   },
+  // Auto-updater safe interface
+  checkForUpdates: () => ipcRenderer.invoke('studyos:updater-check'),
+  downloadUpdate: () => ipcRenderer.invoke('studyos:updater-download'),
+  installUpdate: () => ipcRenderer.invoke('studyos:updater-install'),
+  getUpdateStatus: () => ipcRenderer.invoke('studyos:updater-get-status'),
+  onUpdateStatusChanged: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const h = (_e, data) => cb(data);
+    ipcRenderer.on('studyos:updater-status-changed', h);
+    return () => ipcRenderer.removeListener('studyos:updater-status-changed', h);
+  },
 });
