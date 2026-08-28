@@ -380,7 +380,7 @@ export const LocalAIPortal: React.FC<PortalProps> = ({
   const [isThinking, setIsThinking] = useState<boolean>(false);
 
   useEffect(() => {
-    const desc = localModelManager.getActiveModelDescriptor();
+    const desc = localModelManager.getActiveModel();
     setActiveModel(desc);
   }, []);
 
@@ -404,7 +404,7 @@ export const LocalAIPortal: React.FC<PortalProps> = ({
         topic: 'Browser Study Session',
       });
 
-      const currentDesc = localModelManager.getActiveModelDescriptor();
+      const currentDesc = localModelManager.getActiveModel();
       setActiveModel(currentDesc);
 
       setMessages((prev) => [

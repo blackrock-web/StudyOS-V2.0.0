@@ -114,7 +114,7 @@ export const LectureTracker: React.FC<LectureTrackerProps> = ({ onShowNotificati
     watchSpeed: number;
     notes: string;
   }>({
-    subject: 'Algorithms',
+    subject: db.getCurrentExamSubjects()[0] || 'General Studies',
     chapter: '',
     originalDate: new Date().toISOString().split('T')[0] || '',
     reanchoredDate: new Date().toISOString().split('T')[0] || '',

@@ -322,7 +322,7 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
   // Form Fields
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState<TaskItem['type']>('Lecture');
-  const [formSubject, setFormSubject] = useState('Algorithms');
+  const [formSubject, setFormSubject] = useState(() => db.getCurrentExamSubjects()[0] || 'General Studies');
   const [formDate, setFormDate] = useState(todayStr);
   const [formTimeSlot, setFormTimeSlot] = useState<TaskItem['timeSlot']>('Morning');
   const [formPriority, setFormPriority] = useState<TaskItem['priority']>('High');
@@ -353,7 +353,7 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
     setEditingTask(null);
     setFormTitle('');
     setFormType('Lecture');
-    setFormSubject('Algorithms');
+    setFormSubject(quickFocusSubject || db.getCurrentExamSubjects()[0] || 'General Studies');
     setFormDate(defaultDate || selectedDate);
     setFormTimeSlot(defaultSlot || 'Morning');
     setFormPriority('High');
@@ -371,7 +371,7 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
     setEditingTask(task);
     setFormTitle(task.title);
     setFormType(task.type || 'Custom');
-    setFormSubject(task.subject || 'Algorithms');
+    setFormSubject(task.subject || db.getCurrentExamSubjects()[0] || 'General Studies');
     setFormDate(task.dueDate || selectedDate);
     setFormTimeSlot(task.timeSlot || 'Morning');
     setFormPriority(task.priority || 'Medium');

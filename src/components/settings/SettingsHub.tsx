@@ -94,22 +94,19 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
       const clean = sec.replace('settings-', '');
       if (clean === 'profile') return 'academic-profile';
       if (clean === 'network' || clean === 'network-access') return 'network-access';
-      if (clean === 'models' || clean === 'local-models') return 'local-models';
+      if (clean === 'models' || clean === 'local-models' || clean === 'ai' || clean === 'ai-provider') return 'local-models';
       if (clean === 'danger' || clean === 'danger-zone' || clean === 'destroy') return 'danger-zone';
       if (clean === 'features' || clean === 'navigation' || clean === 'browser') return 'features-navigation';
-      if (clean === 'ai' || clean === 'ai-provider') return 'ai-provider';
       if (clean === 'workspace') return 'workspace-analytics';
       if (clean === 'theme' || clean === 'themes') return 'themes';
       if (clean === 'version') return 'version';
       if (clean === 'exam-manager' || clean === 'exams') return 'exam-manager';
       if (clean === 'access') return 'access-control';
-      if (clean === 'backup') return 'backup-restore';
-      if (clean === 'storage') return 'cache-storage';
-      if (clean === 'recycle') return 'recycle-bin';
-      if (clean === 'dev') return 'about';
+      if (clean === 'backup' || clean === 'storage' || clean === 'recycle') return 'backup-restore';
+      if (clean === 'dev' || clean === 'privacy') return 'about';
     }
     if (sec === 'network' || sec === 'network-access') return 'network-access';
-    if (sec === 'models' || sec === 'local-models') return 'local-models';
+    if (sec === 'models' || sec === 'local-models' || sec === 'ai' || sec === 'ai-provider') return 'local-models';
     if (sec === 'danger' || sec === 'danger-zone' || sec === 'destroy') return 'danger-zone';
     if (sec === 'parent-viewer') return 'academic-profile';
     return (sec as SettingsSectionId) || 'academic-profile';
@@ -183,10 +180,9 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
 
   const navItems = [
     { id: 'academic-profile', label: 'Academic Profile', icon: User, desc: 'Personal details & study goals' },
+    { id: 'local-models', label: 'Local AI & Models Hub', icon: Cpu, desc: 'Offline GGUF models, switcher & inference' },
     { id: 'network-access', label: 'Network Access', icon: Globe, desc: 'LOCKED by default • PIN authorized' },
-    { id: 'local-models', label: 'Local AI & Models', icon: Cpu, desc: 'Offline GGUF models & weights' },
     { id: 'features-navigation', label: 'Navigation & Modules', icon: Sliders, desc: 'Study Browser, Planner & Practice settings' },
-    { id: 'ai-provider', label: 'AI Engine & Providers', icon: Sparkles, desc: 'Configure AI provider layer & manual import' },
     { id: 'exam-manager', label: 'Exam Manager & Workspaces', icon: Award, desc: 'Create, edit & switch competitive exams' },
     { id: 'pomodoro-break', label: 'Pomodoro Break Mode', icon: Gamepad2, desc: 'Full-screen break & brain games' },
     { id: 'workspace-analytics', label: 'Workspace Analytics', icon: BarChart3, desc: 'Database size & metrics' },
@@ -195,12 +191,9 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({
     { id: 'version', label: 'Version Management', icon: Package, desc: 'Releases & updates' },
     { id: 'notifications', label: 'Alerts & Reminders', icon: Bell, desc: 'Study schedule alarms' },
     { id: 'access-control', label: 'Access Control', icon: Shield, desc: 'Workspace lock & PIN' },
-    { id: 'backup-restore', label: 'Backup & Restore', icon: Database, desc: 'Export & JSON snapshots' },
-    { id: 'cache-storage', label: 'Cache & Storage', icon: HardDrive, desc: 'SQLite vacuum & cache' },
+    { id: 'backup-restore', label: 'Data & Backup Storage', icon: Database, desc: 'Export, import & database management' },
     { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard, desc: 'Hotkeys & command triggers' },
-    { id: 'about', label: 'About Station', icon: Info, desc: 'Version & offline status' },
-    { id: 'privacy', label: 'Privacy & Logs', icon: Lock, desc: 'Zero cloud telemetry' },
-    { id: 'recycle-bin', label: 'Recycle Bin', icon: Trash2, desc: 'Archived notes & lectures' },
+    { id: 'about', label: 'About & Privacy', icon: Info, desc: 'Version & zero-telemetry status' },
     { id: 'danger-zone', label: 'Danger Zone', icon: Flame, desc: 'Nuclear application destruction' },
   ];
 

@@ -9,6 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview --port 3000",
     "lint": "tsc --noEmit",
+    "test": "node --test src/security/tests/securityHardening.test.mjs",
+    "test:security": "node --test src/security/tests/securityHardening.test.mjs",
     "electron:dev": "concurrently -k \"vite --host 0.0.0.0 --port 3000\" \"wait-on http://localhost:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder"
   },

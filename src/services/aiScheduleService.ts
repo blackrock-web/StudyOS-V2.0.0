@@ -456,33 +456,60 @@ Return a JSON object with:
   }
 
   /**
-   * Applies the generated schedule into Database Tasks and Lecture Records
+   * Applies the generated schedule into Database Tasks and Lecture Records with duplicate protection
    */
   public applyScheduleToDatabase(targetDate: string, slots: AutoScheduleSlot[], examId?: string) {
     const targetExamId = examId || db.getActiveExamId();
     const existingTasks = db.getTasks();
     const otherDateTasks = existingTasks.filter((t) => t.dueDate !== targetDate);
-    const manualTasksOnDate = existingTasks.filter((t) => t.dueDate === targetDate && (t as any).isManual);
+    const existingDateTasks = existingTasks.filter((t) => t.dueDate === targetDate);
 
     const studySlots = slots.filter((s) => s.type !== 'Break' && s.type !== 'College' && s.type !== 'Commitment');
 
-    const generatedTasks: TaskItem[] = studySlots.map((s, idx) => ({
-      id: `task-sched-${targetDate}-${idx}-${Date.now()}`,
-      title: s.title,
-      type: (s.type === 'Lecture' || s.type === 'Revision' || s.type === 'Practice' || s.type === 'DPP' ? s.type : 'Custom') as TaskItem['type'],
-      subject: s.subject,
-      dueDate: targetDate,
-      timeSlot: s.startTime < '12:00' ? 'Morning' : s.startTime < '17:00' ? 'Afternoon' : s.startTime < '21:00' ? 'Evening' : 'Night',
-      priority: s.priority || 'High',
-      completed: false,
-      status: 'Pending',
-      estimatedMinutes: s.durationMinutes,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      examId: targetExamId,
-    }));
+    const mergedDateTasks: TaskItem[] = [...existingDateTasks];
 
-    db.setTasks([...otherDateTasks, ...manualTasksOnDate, ...generatedTasks]);
+    studySlots.forEach((s, idx) => {
+      const slotType = (s.type === 'Lecture' || s.type === 'Revision' || s.type === 'Practice' || s.type === 'DPP' ? s.type : 'Custom') as TaskItem['type'];
+      const timeSlot = s.startTime < '12:00' ? 'Morning' : s.startTime < '17:00' ? 'Afternoon' : s.startTime < '21:00' ? 'Evening' : 'Night';
+
+      // Check if a matching task already exists on this date for this subject and title/type
+      const matchIdx = mergedDateTasks.findIndex(
+        (t) =>
+          t.subject?.toLowerCase() === s.subject?.toLowerCase() &&
+          (t.title?.toLowerCase().includes(s.title?.toLowerCase() || '') ||
+           s.title?.toLowerCase().includes(t.title?.toLowerCase() || ''))
+      );
+
+      if (matchIdx >= 0) {
+        // Update existing task times and duration without overriding completed status
+        mergedDateTasks[matchIdx] = {
+          ...mergedDateTasks[matchIdx],
+          startTime: s.startTime,
+          endTime: s.endTime,
+          estimatedMinutes: s.durationMinutes,
+          timeSlot,
+        };
+      } else {
+        // Create new task
+        mergedDateTasks.push({
+          id: `task-sched-${targetDate}-${idx}-${Date.now()}`,
+          title: s.title,
+          type: slotType,
+          subject: s.subject,
+          dueDate: targetDate,
+          timeSlot,
+          priority: s.priority || 'High',
+          completed: false,
+          status: 'Pending',
+          estimatedMinutes: s.durationMinutes,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          examId: targetExamId,
+        });
+      }
+    });
+
+    db.setTasks([...otherDateTasks, ...mergedDateTasks]);
 
     // Also update any matching lectures with scheduled date
     studySlots.forEach((s) => {

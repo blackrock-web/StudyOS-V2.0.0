@@ -12,18 +12,33 @@ import {
   ShieldCheck,
   RefreshCw,
   Zap,
+  Lock,
+  Radio,
+  FileText,
+  Terminal,
+  Check,
+  Layers,
+  Sliders,
+  FolderOpen,
+  Plus,
 } from 'lucide-react';
 import { localModelManager } from '../../services/models/LocalModelManager';
 import { LocalModelDescriptor } from '../../types';
 import { networkGateway } from '../../services/network/NetworkGateway';
+import {
+  getActiveProviderId,
+  setActiveProviderId,
+  getActiveProvider,
+} from '../../services/aiProvider';
 
 interface Props {
   onShowNotification: (msg: string, title?: string) => void;
 }
 
 export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
-  const [models, setModels] = useState<LocalModelDescriptor[]>(localModelManager.getModels());
-  const [activeModelId, setActiveModelId] = useState<string | null>(localModelManager.getActiveModel()?.id || null);
+  const [activeProviderId, setActiveProviderIdState] = useState<string>(() => getActiveProviderId());
+  const [models, setModels] = useState<LocalModelDescriptor[]>(() => localModelManager.getModels());
+  const [activeModelId, setActiveModelId] = useState<string | null>(() => localModelManager.getActiveModel()?.id || null);
   const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
   const [showPinModal, setShowPinModal] = useState(false);
   const [targetModelId, setTargetModelId] = useState<string | null>(null);
@@ -32,13 +47,39 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
   const [testOutput, setTestOutput] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
+  // Custom Model Import Modal State
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPath, setCustomPath] = useState('');
+  const [customFormat, setCustomFormat] = useState<'GGUF' | 'ONNX'>('GGUF');
+  const [customQuant, setCustomQuant] = useState('Q4_K_M');
+
   useEffect(() => {
     const unsub = localModelManager.subscribe((updatedModels, activeId) => {
-      setModels(updatedModels);
+      setModels([...updatedModels]);
       setActiveModelId(activeId);
     });
-    return () => unsub();
+
+    const handleProviderChange = () => {
+      setActiveProviderIdState(getActiveProviderId());
+    };
+
+    window.addEventListener('studyos_ai_provider_changed', handleProviderChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('studyos_ai_provider_changed', handleProviderChange);
+    };
   }, []);
+
+  const handleSelectProvider = (id: string) => {
+    setActiveProviderId(id);
+    setActiveProviderIdState(id);
+    onShowNotification(
+      `AI Engine strategy set to ${id === 'local' ? 'Local AI (llama.cpp / GGUF)' : 'Manual Import Parser'}`,
+      'Local AI Strategy'
+    );
+  };
 
   const handleStartDownload = (modelId: string) => {
     setTargetModelId(modelId);
@@ -64,7 +105,7 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
       targetModelId,
       pinInput,
       (pct, speed, bytes) => {
-        // Live progress handled via subscriber
+        // Handled reactively via subscriber
       }
     );
 
@@ -76,16 +117,36 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
     }
   };
 
-  const handleSelectActive = (modelId: string) => {
-    localModelManager.setActiveModel(modelId);
-    onShowNotification(`Active offline model set to ${modelId}`, 'AI Engine');
+  const handleSelectActiveModel = (modelId: string) => {
+    const success = localModelManager.setActiveModel(modelId);
+    if (success) {
+      const model = localModelManager.getActiveModel();
+      onShowNotification(`Active offline model set to ${model?.name || modelId}`, 'Local AI Engine');
+    }
   };
 
-  const handleRemove = async (modelId: string) => {
+  const handleRemoveModel = async (modelId: string) => {
     const res = await localModelManager.removeModel(modelId);
     if (res.ok) {
       onShowNotification('Model removed from local storage.', 'Storage Freed');
     }
+  };
+
+  const handleImportCustom = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customName || !customPath) return;
+
+    const imported = localModelManager.importCustomModel({
+      name: customName,
+      filePathOrUrl: customPath,
+      format: customFormat,
+      quantization: customQuant,
+    });
+
+    setShowCustomModal(false);
+    setCustomName('');
+    setCustomPath('');
+    onShowNotification(`Custom model ${imported.name} imported and activated!`, 'Custom Model');
   };
 
   const handleTestInference = async () => {
@@ -93,10 +154,15 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
     setTestOutput(null);
     try {
       const output = await localModelManager.executeOfflineInference(
-        'Generate study revision notes on Database Functional Dependencies and Armstrong Axioms for GATE CSE.'
+        'Generate structured study notes on Operating Systems Virtual Memory, Paging, and Belady Anomaly for GATE CSE.',
+        {
+          subject: 'Operating Systems',
+          topic: 'Virtual Memory & Paging',
+          chapter: 'Memory Management',
+        }
       );
       setTestOutput(output);
-      onShowNotification('Offline local inference completed successfully with 0 network calls!', 'Offline AI');
+      onShowNotification('Offline local inference completed successfully on CPU/GPU!', 'Offline AI Test');
     } catch (e: any) {
       setTestOutput(`Inference error: ${e.message}`);
     } finally {
@@ -105,179 +171,311 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Header Banner */}
-      <div className="bg-white p-6 rounded-3xl border border-[#E7E0F8] shadow-xs space-y-6">
-        <div className="border-b border-[#E7E0F8] pb-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-purple-600" /> Models & Local AI Engine (100% Offline)
-            </h3>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Run real local LLMs directly on your device CPU/GPU. Zero API keys, zero internet required for inference.
+    <div className="space-y-6 animate-fadeIn text-slate-900">
+      {/* 1. Header Hero Card */}
+      <div className="bg-white p-6 md:p-8 rounded-3xl border border-indigo-200 shadow-2xs space-y-6">
+        <div className="border-b border-indigo-100 pb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1 max-w-2xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              100% Offline Local AI • Zero Cloud Services & Zero API Keys
+            </div>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 mt-1">
+              Local AI Engine & GGUF Model Hub
+            </h2>
+            <p className="text-xs text-slate-600 font-medium leading-relaxed">
+              StudyOS runs real quantized neural networks entirely on your device's CPU/GPU via llama.cpp. Switch between installed GGUF models, download new vetted weights with PIN verification, or import custom models.
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleTestInference}
-            disabled={isTesting}
-            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-          >
-            <Sparkles className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
-            {isTesting ? 'Running Local AI…' : 'Test Offline Generation'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCustomModal(true)}
+              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-slate-600" />
+              <span>Import GGUF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestInference}
+              disabled={isTesting}
+              className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
+              <span>{isTesting ? 'Running Local AI...' : 'Test Offline AI'}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Test Output Box */}
+        {/* 2. System Status Matrix */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">AI Runtime</span>
+            <div className="mt-1 flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-indigo-600" />
+              <span className="text-sm font-bold text-slate-900 font-mono">llama.cpp</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Native CPU/GPU
+            </span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Inference Mode</span>
+            <div className="mt-1 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-bold text-slate-900">Air-Gapped</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-medium mt-1">100% Local Memory</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">API Keys</span>
+            <div className="mt-1 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-bold text-slate-900">Zero Needed</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 font-bold mt-1">No billing / No tokens</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cloud Network</span>
+            <div className="mt-1 flex items-center gap-2">
+              <Radio className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-bold text-slate-600">Blocked</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium mt-1">Zero Telemetry</span>
+          </div>
+        </div>
+
+        {/* 3. AI Strategy Selector */}
+        <div className="space-y-3 pt-2">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-indigo-600" /> AI Provider Pipeline
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => handleSelectProvider('local')}
+              className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
+                activeProviderId === 'local'
+                  ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs'
+                  : 'border-slate-200 hover:border-indigo-300 bg-white'
+              }`}
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                    <Zap className="w-3 h-3" /> Recommended • GGUF
+                  </span>
+                  {activeProviderId === 'local' && (
+                    <span className="text-xs font-bold text-indigo-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> Active Pipeline
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">1. Local AI (llama.cpp / GGUF)</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Automatic offline generation for notes, flashcards, quizzes, and focus plans.
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectProvider('manual')}
+              className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
+                activeProviderId === 'manual'
+                  ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs'
+                  : 'border-slate-200 hover:border-indigo-300 bg-white'
+              }`}
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-800 flex items-center gap-1">
+                    <FileText className="w-3 h-3" /> Manual Input
+                  </span>
+                  {activeProviderId === 'manual' && (
+                    <span className="text-xs font-bold text-indigo-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> Active Pipeline
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-sm font-bold text-slate-900">2. Manual Text Parser</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Paste textbook excerpts or lecture transcripts to generate structured study sets without AI.
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* 4. Live Test Output Console */}
         {testOutput && (
-          <div className="p-4 rounded-2xl bg-slate-900 text-slate-100 font-mono text-xs space-y-2 border border-slate-800 animate-in fade-in">
-            <div className="flex items-center justify-between text-purple-400 font-bold">
+          <div className="p-5 rounded-2xl bg-slate-900 text-slate-100 font-mono text-xs space-y-2 border border-slate-800 animate-in fade-in">
+            <div className="flex items-center justify-between text-indigo-400 font-bold">
               <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Offline Local AI Output
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Offline Local AI Output Console
               </span>
               <button
                 type="button"
                 onClick={() => setTestOutput(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white cursor-pointer"
               >
                 ✕ Close
               </button>
             </div>
-            <pre className="whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto text-[11px]">
+            <pre className="whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto text-[11px] text-emerald-300">
               {testOutput}
             </pre>
           </div>
         )}
 
-        {/* Local Model Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {models.map((m) => {
-            const isInstalled = m.status === 'installed';
-            const isActive = activeModelId === m.id;
-            const isDownloading = m.status === 'downloading' || m.status === 'verifying';
+        {/* 5. GGUF Model Catalog & Switcher */}
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-indigo-600" /> Available Local Models (GGUF Format)
+            </h3>
+            <span className="text-xs font-bold text-indigo-600">
+              Active: <strong>{localModelManager.getActiveModel()?.name || 'SmolLM2 135M'}</strong>
+            </span>
+          </div>
 
-            return (
-              <div
-                key={m.id}
-                className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
-                  isActive
-                    ? 'border-purple-600 bg-purple-50/40 ring-2 ring-purple-500/20 shadow-sm'
-                    : isInstalled
-                    ? 'border-emerald-200 bg-white hover:border-emerald-300'
-                    : 'border-slate-200 bg-slate-50/60 hover:bg-white'
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-800 font-mono">
-                        {m.format} • {m.parameterSize}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
-                        {m.diskSizeFormatted}
-                      </span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {models.map((m) => {
+              const isInstalled = m.status === 'installed';
+              const isActive = activeModelId === m.id;
+              const isDownloading = m.status === 'downloading' || m.status === 'verifying';
+
+              return (
+                <div
+                  key={m.id}
+                  className={`p-5 rounded-2xl border-2 transition-all flex flex-col justify-between space-y-4 ${
+                    isActive
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-xs'
+                      : isInstalled
+                      ? 'border-slate-200 bg-white hover:border-indigo-300'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-white'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-800 font-mono">
+                          {m.format} • {m.parameterSize}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                          {m.diskSizeFormatted}
+                        </span>
+                      </div>
+
+                      {isActive && (
+                        <span className="flex items-center gap-1 text-xs font-black text-indigo-700 bg-indigo-100 px-2.5 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> ACTIVE ENGINE
+                        </span>
+                      )}
                     </div>
 
-                    {isActive && (
-                      <span className="flex items-center gap-1 text-xs font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> ACTIVE
-                      </span>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">{m.name}</h4>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{m.tagline}</p>
+                    </div>
+
+                    {/* Specs Matrix */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      <div>
+                        <span className="text-slate-400">RAM: </span>
+                        <span className="text-slate-700 font-bold">{m.recommendedRam}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Speed: </span>
+                        <span className="text-emerald-700 font-bold">{m.inferenceSpeed}</span>
+                      </div>
+                    </div>
+
+                    {/* Checksum & Security */}
+                    <div className="text-[10px] font-mono text-slate-400 truncate">
+                      SHA-256: {m.sha256.slice(0, 20)}…
+                    </div>
+
+                    {/* Progress Bar if Downloading */}
+                    {isDownloading && (
+                      <div className="space-y-1.5 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-900">
+                          <span className="flex items-center gap-1.5">
+                            <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
+                            {m.status === 'verifying' ? 'Verifying SHA-256 Checksum...' : 'Downloading model weights...'}
+                          </span>
+                          <span>{m.downloadProgress || 0}%</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-indigo-200 overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
+                            style={{ width: `${m.downloadProgress || 0}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
 
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">{m.name}</h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">{m.tagline}</p>
-                  </div>
+                  {/* Action Buttons */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {isInstalled ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectActiveModel(m.id)}
+                          disabled={isActive}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                            isActive
+                              ? 'bg-indigo-100 text-indigo-700 cursor-default'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                          }`}
+                        >
+                          {isActive ? 'Active Engine' : 'Use This Model'}
+                        </button>
 
-                  {/* Specs Matrix */}
-                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono bg-white p-2.5 rounded-xl border border-slate-100">
-                    <div>
-                      <span className="text-slate-400">RAM: </span>
-                      <span className="text-slate-700 font-bold">{m.recommendedRam}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Speed: </span>
-                      <span className="text-emerald-700 font-bold">{m.inferenceSpeed}</span>
-                    </div>
-                  </div>
-
-                  {/* Checksum & Security */}
-                  <div className="text-[10px] font-mono text-slate-400 truncate">
-                    SHA-256: {m.sha256.slice(0, 16)}…
-                  </div>
-
-                  {/* Progress Bar if Downloading */}
-                  {isDownloading && (
-                    <div className="space-y-1.5 p-3 rounded-xl bg-purple-50 border border-purple-200">
-                      <div className="flex items-center justify-between text-xs font-bold text-purple-900">
-                        <span className="flex items-center gap-1.5">
-                          <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />
-                          {m.status === 'verifying' ? 'Verifying SHA-256 Checksum…' : 'Downloading model weights…'}
-                        </span>
-                        <span>{m.downloadProgress || 0}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-purple-200 overflow-hidden">
-                        <div
-                          className="h-full bg-purple-600 transition-all duration-300 rounded-full"
-                          style={{ width: `${m.downloadProgress || 0}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  {isInstalled ? (
-                    <>
+                        {m.id !== 'smollm2-135m-instruct' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModel(m.id)}
+                            className="px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        )}
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => handleSelectActive(m.id)}
-                        disabled={isActive}
-                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                          isActive
-                            ? 'bg-purple-100 text-purple-700 cursor-default'
-                            : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
-                        }`}
+                        onClick={() => handleStartDownload(m.id)}
+                        disabled={isDownloading}
+                        className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
                       >
-                        {isActive ? 'Active Engine' : 'Use This Model'}
+                        <Download className="w-3.5 h-3.5" />
+                        Download Model ({m.diskSizeFormatted})
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(m.id)}
-                        className="px-2.5 py-1.5 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> Remove
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleStartDownload(m.id)}
-                      disabled={isDownloading}
-                      className="w-full py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Download Model ({m.diskSizeFormatted})
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* PIN Authorization Modal */}
       {showPinModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-5">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-5 text-slate-900">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
                   <Key className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-bold text-slate-900">Authorize Model Download</h3>
@@ -285,15 +483,14 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
               <button
                 type="button"
                 onClick={() => setShowPinModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
+                className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Downloading this model will temporarily enable network access exclusively to <strong>HuggingFace</strong>.
-              Upon verification, network access will immediately auto-lock.
+              Downloading this vetted model will temporarily unlock network access exclusively to download model weights. Upon completion, the network immediately auto-locks.
             </p>
 
             <form onSubmit={handleConfirmDownload} className="space-y-4">
@@ -305,7 +502,7 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
                   onChange={(e) => setPinInput(e.target.value)}
                   placeholder="Enter 4-6 digit PIN"
                   autoFocus
-                  className="w-full p-3 text-sm font-mono tracking-widest bg-slate-50 border border-slate-200 rounded-xl focus:border-purple-600 focus:bg-white"
+                  className="w-full p-3 text-sm font-mono tracking-widest bg-slate-50 border border-slate-200 rounded-xl focus:border-indigo-600 focus:bg-white"
                 />
               </div>
 
@@ -319,15 +516,109 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
                 <button
                   type="button"
                   onClick={() => setShowPinModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer"
                 >
                   Unlock & Download Model
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom GGUF/ONNX Model Import Modal */}
+      {showCustomModal && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 text-slate-900">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  <FolderOpen className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Import Custom GGUF/ONNX Model</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCustomModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Register a local file path or custom model URL. The model will run locally in offline mode with zero network dependency.
+            </p>
+
+            <form onSubmit={handleImportCustom} className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Model Name</label>
+                <input
+                  type="text"
+                  required
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="e.g. Llama-3.2-1B-Instruct-Q4_K_M"
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-600 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Local File Path / Model Location</label>
+                <input
+                  type="text"
+                  required
+                  value={customPath}
+                  onChange={(e) => setCustomPath(e.target.value)}
+                  placeholder="e.g. /home/user/models/custom-model.gguf"
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-600 focus:bg-white font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Format</label>
+                  <select
+                    value={customFormat}
+                    onChange={(e) => setCustomFormat(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50"
+                  >
+                    <option value="GGUF">GGUF (llama.cpp)</option>
+                    <option value="ONNX">ONNX Runtime</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Quantization</label>
+                  <input
+                    type="text"
+                    value={customQuant}
+                    onChange={(e) => setCustomQuant(e.target.value)}
+                    placeholder="Q4_K_M"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                >
+                  Register & Activate Model
                 </button>
               </div>
             </form>

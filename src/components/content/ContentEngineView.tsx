@@ -27,6 +27,7 @@ import {
   ContentItem,
   ContentItemType,
 } from '../../services/contentEngine';
+import { db } from '../../services/db';
 import { VersionHistoryModal } from './VersionHistoryModal';
 import { ContentSearchWidget } from './ContentSearchWidget';
 import { runContentEngineMigrationTests, MigrationTestResult } from '../../services/__tests__/contentEngine.test.ts';
@@ -52,7 +53,7 @@ export const ContentEngineView: React.FC<ContentEngineViewProps> = ({
   const [formTitle, setFormTitle] = useState<string>('');
   const [formBody, setFormBody] = useState<string>('');
   const [formTags, setFormTags] = useState<string>('');
-  const [formSubject, setFormSubject] = useState<string>('Algorithms');
+  const [formSubject, setFormSubject] = useState<string>(() => db.getCurrentExamSubjects()[0] || 'General Studies');
   const [formTopic, setFormTopic] = useState<string>('');
   const [formYear, setFormYear] = useState<string>('GATE 2026');
   const [formMarks, setFormMarks] = useState<number>(2);
@@ -97,7 +98,7 @@ export const ContentEngineView: React.FC<ContentEngineViewProps> = ({
     setFormTitle('');
     setFormBody('');
     setFormTags('');
-    setFormSubject('Algorithms');
+    setFormSubject(db.getCurrentExamSubjects()[0] || 'General Studies');
     setFormTopic('');
     setFormYear('GATE 2026');
     setFormMarks(2);
