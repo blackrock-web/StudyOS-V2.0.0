@@ -1,32 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Calendar,
   Clock,
   Briefcase,
-  Coffee,
   AlertTriangle,
   CheckCircle2,
-  Plus,
   Trash2,
   X,
   Send,
   Sliders,
-  ChevronRight,
-  BookOpen,
-  Zap,
-  RotateCcw,
   Check,
+  Settings,
 } from 'lucide-react';
 import { db } from '../../services/db';
-import { aiScheduleService, ScheduleConstraints, GeneratedScheduleResult } from '../../services/aiScheduleService';
-import { AutoScheduleSlot, DailyCommitment } from '../../types';
+import {
+  aiScheduleService,
+  ScheduleConstraints,
+  GeneratedScheduleResult,
+} from '../../services/aiScheduleService';
+import { DailyCommitment } from '../../types';
 
-interface AISchedulePlannerModalProps {
+export interface AISchedulePlannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetDate?: string;
   onApplied?: () => void;
+  onOpenDailySetup?: () => void;
 }
 
 export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
@@ -34,12 +34,15 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
   onClose,
   targetDate,
   onApplied,
+  onOpenDailySetup,
 }) => {
   const dateStr = targetDate || new Date().toISOString().split('T')[0] || '';
 
   // Constraints State
   const [studyHours, setStudyHours] = useState(6);
-  const [collegeOption, setCollegeOption] = useState<'no_college' | 'full_day' | 'half_day' | 'custom_college'>('no_college');
+  const [collegeOption, setCollegeOption] = useState<
+    'no_college' | 'full_day' | 'half_day' | 'custom_college'
+  >('no_college');
   const [customCollegeStart, setCustomCollegeStart] = useState('10:00');
   const [customCollegeEnd, setCustomCollegeEnd] = useState('16:00');
   const [breakMins, setBreakMins] = useState(15);
@@ -58,31 +61,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
   const [nlFeedback, setNlFeedback] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'schedule' | 'constraints'>('schedule');
 
-  useEffect(() => {
-    if (isOpen) {
-      const existingAvail = db.getDailyAvailability(dateStr);
-      if (existingAvail) {
-        const opt = existingAvail.collegeOption;
-        if (opt === 'morning_college' || opt === 'afternoon_college') {
-          setCollegeOption('half_day');
-        } else if (opt === 'full_college') {
-          setCollegeOption('full_day');
-        } else if (opt === 'custom_college') {
-          setCollegeOption('custom_college');
-        } else {
-          setCollegeOption('no_college');
-        }
-        if (existingAvail.customCollegeStart) setCustomCollegeStart(existingAvail.customCollegeStart);
-        if (existingAvail.customCollegeEnd) setCustomCollegeEnd(existingAvail.customCollegeEnd);
-        setCommitments(existingAvail.commitments || []);
-      }
-      handleGenerate();
-    }
-  }, [isOpen, dateStr]);
-
-  if (!isOpen) return null;
-
-  const handleGenerate = async () => {
+  const handleGenerate = useCallback(async () => {
     setIsGenerating(true);
     setNlFeedback(null);
     try {
@@ -107,7 +86,48 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [dateStr, studyHours, collegeOption, customCollegeStart, customCollegeEnd, commitments, morningSlot, breakMins, maxBlockMins]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const existingAvail = db.getDailyAvailability(dateStr);
+      if (existingAvail) {
+        const opt = existingAvail.collegeOption;
+        if (opt === 'morning_college' || opt === 'afternoon_college') {
+          setCollegeOption('half_day');
+        } else if (opt === 'full_college') {
+          setCollegeOption('full_day');
+        } else if (opt === 'custom_college') {
+          setCollegeOption('custom_college');
+        } else {
+          setCollegeOption('no_college');
+        }
+        if (existingAvail.customCollegeStart) setCustomCollegeStart(existingAvail.customCollegeStart);
+        if (existingAvail.customCollegeEnd) setCustomCollegeEnd(existingAvail.customCollegeEnd);
+        setCommitments(existingAvail.commitments || []);
+      }
+      handleGenerate();
+    }
+  }, [isOpen, dateStr, handleGenerate]);
+
+  // Keyboard accessibility
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, handleKeyDown]);
+
+  if (!isOpen) return null;
 
   const handleExecuteNlCommand = async (commandToRun?: string) => {
     const cmd = (commandToRun || nlCommand).trim();
@@ -171,17 +191,27 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
     onClose();
   };
 
+  const activeExamId = db.getActiveExamId();
+  const currentExamSubs = db.getCurrentExamSubjects(activeExamId);
+  const sub1 = currentExamSubs[0] || 'Core Subject';
+  const sub2 = currentExamSubs[1] || currentExamSubs[0] || 'Revision';
+
   const promptChips = [
-    '⚡ Give me more Physics today',
-    '💼 I have work from 6 PM to 8 PM',
-    '⏳ I only have 3 hours today',
-    '☕ Add a 30-minute break',
-    '🎯 Prioritize my pending lectures',
-    '🔄 Move Chemistry to tomorrow',
+    `⚡ Prioritize ${sub1} today`,
+    `🎯 Focus on pending ${sub2} lectures`,
+    '💼 I have college/work from 2 PM to 5 PM',
+    '⏳ I only have 4 hours today',
+    '☕ Add a 20-minute break after deep study',
+    `🔄 Schedule high-priority ${sub1} revision`,
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ai-planner-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn"
+    >
       <div className="relative w-full max-w-4xl max-h-[92vh] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden text-slate-900">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
@@ -190,22 +220,39 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                AI Automatic Lecture Scheduler
+              <h2 id="ai-planner-modal-title" className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                <span>AI Planner</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">
                   {dateStr}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                Optimizes your lectures, breaks, and work hours without overlaps
+                AI schedule engine optimizes lectures, syllabus topics, and breaks with conflict prevention.
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Launch Daily Setup button if provided */}
+            {onOpenDailySetup && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenDailySetup();
+                }}
+                className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Open Daily Setup"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Daily Setup</span>
+              </button>
+            )}
+
             {/* View Switcher */}
             <div className="flex bg-slate-200/70 p-1 rounded-xl">
               <button
+                type="button"
                 onClick={() => setActiveTab('schedule')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   activeTab === 'schedule'
@@ -216,6 +263,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                 Timetable
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('constraints')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   activeTab === 'constraints'
@@ -228,8 +276,10 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
             </div>
 
             <button
+              type="button"
               onClick={onClose}
               className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+              aria-label="Close AI Planner Modal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -244,7 +294,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
               {/* Daily Target Study Hours */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                 <div className="flex justify-between items-center">
-                  <label className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <label htmlFor="ai-study-hours-slider" className="text-sm font-bold text-slate-800 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-indigo-600" />
                     Available Daily Study Time
                   </label>
@@ -253,6 +303,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                   </span>
                 </div>
                 <input
+                  id="ai-study-hours-slider"
                   type="range"
                   min={1}
                   max={14}
@@ -283,6 +334,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                   ].map((opt) => (
                     <button
                       key={opt.id}
+                      type="button"
                       onClick={() => setCollegeOption(opt.id as any)}
                       className={`p-2.5 text-xs font-bold rounded-xl border text-center transition-all cursor-pointer ${
                         collegeOption === opt.id
@@ -322,10 +374,11 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
               {/* Focus Block & Break Preferences */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="text-xs font-bold text-slate-700">
+                  <label htmlFor="ai-focus-duration-select" className="text-xs font-bold text-slate-700">
                     Max Continuous Focus Duration
                   </label>
                   <select
+                    id="ai-focus-duration-select"
                     value={maxBlockMins}
                     onChange={(e) => setMaxBlockMins(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs font-bold cursor-pointer"
@@ -338,10 +391,11 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                 </div>
 
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="text-xs font-bold text-slate-700">
+                  <label htmlFor="ai-break-preference-select" className="text-xs font-bold text-slate-700">
                     Break Preference
                   </label>
                   <select
+                    id="ai-break-preference-select"
                     value={breakMins}
                     onChange={(e) => setBreakMins(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-xs font-bold cursor-pointer"
@@ -380,6 +434,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                     className="w-24 px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-900 text-xs"
                   />
                   <button
+                    type="button"
                     onClick={handleAddCommitment}
                     className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 cursor-pointer"
                   >
@@ -398,6 +453,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                           {c.title} ({c.startTime} - {c.endTime})
                         </span>
                         <button
+                          type="button"
                           onClick={() => handleRemoveCommitment(c.id)}
                           className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
                         >
@@ -410,6 +466,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
               </div>
 
               <button
+                type="button"
                 onClick={handleGenerate}
                 disabled={isGenerating}
                 className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
@@ -437,9 +494,10 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                     onChange={(e) => setNlCommand(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleExecuteNlCommand()}
                     placeholder='Type a command: "Give me more physics today", "I have work 6-8 PM", "Only 2 hours today"...'
-                    className="flex-1 px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                    className="flex-1 px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-medium"
                   />
                   <button
+                    type="button"
                     onClick={() => handleExecuteNlCommand()}
                     disabled={isProcessingNl || !nlCommand.trim()}
                     className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs disabled:opacity-50 transition-all cursor-pointer"
@@ -454,6 +512,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                   {promptChips.map((chip, i) => (
                     <button
                       key={i}
+                      type="button"
                       onClick={() => handleExecuteNlCommand(chip.replace(/^[^\w]+/, ''))}
                       className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
                     >
@@ -567,6 +626,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
                         </span>
                         {!slot.isProtected && (
                           <button
+                            type="button"
                             onClick={() => handleDeleteSlot(slot.id)}
                             className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
                             title="Remove Slot"
@@ -586,6 +646,7 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
         {/* Modal Footer */}
         <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
           <button
+            type="button"
             onClick={() => setActiveTab(activeTab === 'schedule' ? 'constraints' : 'schedule')}
             className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 cursor-pointer"
           >
@@ -595,17 +656,19 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
 
           <div className="flex items-center space-x-3">
             <button
+              type="button"
               onClick={onClose}
               className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleApply}
               className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-xs flex items-center space-x-1.5 transition-all cursor-pointer"
             >
               <Check className="w-4 h-4" />
-              <span>Apply to Planner & Lecture Tracker</span>
+              <span>Apply to Planner</span>
             </button>
           </div>
         </div>
@@ -613,3 +676,5 @@ export const AISchedulePlannerModal: React.FC<AISchedulePlannerModalProps> = ({
     </div>
   );
 };
+
+export default AISchedulePlannerModal;

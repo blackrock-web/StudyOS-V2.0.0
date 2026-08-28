@@ -36,7 +36,6 @@ import { TaskItem, SubjectPlan, ChapterPlan } from '../../types';
 import { INITIAL_GATE_PW_SUBJECT_PLANS } from '../../data/canonicalData';
 import { GlassCard } from '../shared/GlassCard';
 import { PlannerHub } from './PlannerHub';
-import { SingleSubjectFocusView } from '../focus/SingleSubjectFocusView';
 import { getAllSubjectOptions } from '../../data/subjectRegistry';
 
 interface PlannerViewProps {
@@ -67,23 +66,18 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onShowNotification, ac
   const isGate = useMemo(() => db.isGateActive(activeExamId), [activeExamId]);
 
   const [tasks, setTasks] = useState<TaskItem[]>(db.getTasks());
-  const [activeSubTab, setActiveSubTab] = useState<'FocusMode' | 'PlannerHub' | 'LecturePlanner'>(() => {
-    if (activeTab === 'focus-mode' || activeTab === 'single-subject-focus') {
-      return 'FocusMode';
+  const [activeSubTab, setActiveSubTab] = useState<'PlannerHub' | 'LecturePlanner'>(() => {
+    if (activeTab === 'lectures' || activeTab === 'syllabus') {
+      return 'LecturePlanner';
     }
-    if (activeTab === 'planner-hub' || activeTab === 'planner' || activeTab === 'weekly-planner' || activeTab === 'tasks' || activeTab === 'calendar' || activeTab === 'revision-schedule') {
-      return 'PlannerHub';
-    }
-    return 'LecturePlanner';
+    return 'PlannerHub';
   });
 
   useEffect(() => {
-    if (activeTab === 'focus-mode' || activeTab === 'single-subject-focus') {
-      setActiveSubTab('FocusMode');
-    } else if (activeTab === 'planner-hub' || activeTab === 'planner' || activeTab === 'weekly-planner' || activeTab === 'tasks' || activeTab === 'calendar' || activeTab === 'revision-schedule') {
-      setActiveSubTab('PlannerHub');
-    } else {
+    if (activeTab === 'lectures' || activeTab === 'syllabus') {
       setActiveSubTab('LecturePlanner');
+    } else {
+      setActiveSubTab('PlannerHub');
     }
   }, [activeTab]);
 
@@ -228,7 +222,22 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onShowNotification, ac
   const [editingChapter, setEditingChapter] = useState<{ subjectId: string; chapter: ChapterPlan } | null>(null);
 
   // Revision schedules state
-  const [revisions, setRevisions] = useState<RevisionSchedule[]>(INITIAL_REVISION_SCHEDULES);
+  const [revisions, setRevisions] = useState<RevisionSchedule[]>(() => {
+    const subs = db.getCurrentExamSubjects();
+    const today = new Date();
+    return (subs.length > 0 ? subs : ['General Studies']).slice(0, 5).map((sub, idx) => {
+      const intervals: ('1-Day' | '3-Day' | '7-Day' | '30-Day')[] = ['1-Day', '3-Day', '7-Day', '30-Day', '3-Day'];
+      const due = new Date(today.getTime() + (idx + 1) * 2 * 86400000).toISOString().split('T')[0] || '';
+      return {
+        id: `rev-${idx + 1}`,
+        subject: sub,
+        topic: `${sub} High-Yield Concept Revision & Flashcards`,
+        interval: intervals[idx % intervals.length] || '3-Day',
+        dueDate: due,
+        completed: idx === 2,
+      };
+    });
+  });
 
   const handleToggleTask = (id: string) => {
     db.toggleTaskCompletion(id);
@@ -480,23 +489,6 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onShowNotification, ac
       {/* Top Planner Subtab Navigation */}
       <div className="flex flex-wrap items-center gap-2 bg-purple-100/60 p-1.5 rounded-2xl border border-purple-200/80 w-fit">
         <button
-          onClick={() => setActiveSubTab('FocusMode')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeSubTab === 'FocusMode'
-              ? 'bg-gradient-to-r from-[#8b5cf6] via-[#ec4899] to-[#f43f5e] text-white shadow-md shadow-pink-500/20'
-              : 'bg-white/80 text-slate-700 hover:bg-white hover:text-purple-700 border border-slate-200/60'
-          }`}
-        >
-          <Target className={`w-4 h-4 ${activeSubTab === 'FocusMode' ? 'text-white' : 'text-purple-600'}`} />
-          <span>Single-Subject Focus Mode</span>
-          <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${
-            activeSubTab === 'FocusMode' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
-          }`}>
-            Focus Engine
-          </span>
-        </button>
-
-        <button
           onClick={() => setActiveSubTab('PlannerHub')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
             activeSubTab === 'PlannerHub'
@@ -538,11 +530,6 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onShowNotification, ac
           )}
         </button>
       </div>
-
-      {/* 0. SINGLE-SUBJECT FOCUS VIEW */}
-      {activeSubTab === 'FocusMode' && (
-        <SingleSubjectFocusView />
-      )}
 
       {/* 1. PLANNER HUB VIEW (Merged Daily, Weekly, Timetable, Tasks, Revision) */}
       {activeSubTab === 'PlannerHub' && (

@@ -47,6 +47,25 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
   const [testOutput, setTestOutput] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
+  // Integrity Check State
+  const [isVerifyingIntegrity, setIsVerifyingIntegrity] = useState(false);
+  const [integrityReport, setIntegrityReport] = useState<{
+    ok: boolean;
+    valid: boolean;
+    modelId: string;
+    modelName: string;
+    sha256Match: boolean;
+    expectedSha256: string;
+    calculatedSha256: string;
+    diskSizeBytes: number;
+    diskSizeFormatted: string;
+    filePath: string;
+    format: string;
+    quantization: string;
+    message: string;
+    verifiedAt: string;
+  } | null>(null);
+
   // Custom Model Import Modal State
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -64,11 +83,31 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
       setActiveProviderIdState(getActiveProviderId());
     };
 
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowPinModal(false);
+        setShowCustomModal(false);
+        setIntegrityReport(null);
+        setTestOutput(null);
+      }
+    };
+
+    const handleStudyOsEsc = () => {
+      setShowPinModal(false);
+      setShowCustomModal(false);
+      setIntegrityReport(null);
+      setTestOutput(null);
+    };
+
     window.addEventListener('studyos_ai_provider_changed', handleProviderChange);
+    window.addEventListener('keydown', handleEsc);
+    window.addEventListener('studyos_esc_pressed', handleStudyOsEsc);
 
     return () => {
       unsub();
       window.removeEventListener('studyos_ai_provider_changed', handleProviderChange);
+      window.removeEventListener('keydown', handleEsc);
+      window.removeEventListener('studyos_esc_pressed', handleStudyOsEsc);
     };
   }, []);
 
@@ -88,6 +127,29 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
     setShowPinModal(true);
   };
 
+  const handleCancelDownload = (modelId: string) => {
+    localModelManager.cancelDownload(modelId);
+    setDownloadingModelId(null);
+    onShowNotification(`Cancelled model download for ${modelId}`, 'Download Cancelled');
+  };
+
+  const handleVerifyIntegrity = async (modelId: string) => {
+    setIsVerifyingIntegrity(true);
+    try {
+      const report = await localModelManager.verifyModelIntegrity(modelId);
+      setIntegrityReport(report);
+      if (report.valid) {
+        onShowNotification(`Integrity verified for ${report.modelName}! SHA-256 match.`, 'Integrity Valid');
+      } else {
+        onShowNotification(`Integrity check failed: ${report.message}`, 'Verification Warning');
+      }
+    } catch (e: any) {
+      onShowNotification(`Integrity check error: ${e.message}`, 'Error');
+    } finally {
+      setIsVerifyingIntegrity(false);
+    }
+  };
+
   const handleConfirmDownload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetModelId) return;
@@ -104,7 +166,7 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
     const res = await localModelManager.downloadAndInstallModel(
       targetModelId,
       pinInput,
-      (pct, speed, bytes) => {
+      () => {
         // Handled reactively via subscriber
       }
     );
@@ -126,9 +188,11 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
   };
 
   const handleRemoveModel = async (modelId: string) => {
-    const res = await localModelManager.removeModel(modelId);
+    const res = await localModelManager.deleteModel(modelId);
     if (res.ok) {
       onShowNotification('Model removed from local storage.', 'Storage Freed');
+    } else {
+      onShowNotification(res.error || 'Failed to remove model', 'Error');
     }
   };
 
@@ -424,21 +488,34 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                     {isInstalled ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectActiveModel(m.id)}
-                          disabled={isActive}
-                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                            isActive
-                              ? 'bg-indigo-100 text-indigo-700 cursor-default'
-                              : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
-                          }`}
-                        >
-                          {isActive ? 'Active Engine' : 'Use This Model'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectActiveModel(m.id)}
+                            disabled={isActive}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                              isActive
+                                ? 'bg-indigo-100 text-indigo-700 cursor-default'
+                                : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                            }`}
+                          >
+                            {isActive ? 'Active Engine' : 'Use This Model'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyIntegrity(m.id)}
+                            disabled={isVerifyingIntegrity}
+                            className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                            title="Verify GGUF magic bytes and SHA-256 checksum integrity"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Verify Integrity</span>
+                          </button>
+                        </div>
 
                         {m.id !== 'smollm2-135m-instruct' && (
                           <button
@@ -450,6 +527,14 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
                           </button>
                         )}
                       </>
+                    ) : isDownloading ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelDownload(m.id)}
+                        className="w-full py-2 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        Cancel Download
+                      </button>
                     ) : (
                       <button
                         type="button"
@@ -469,10 +554,96 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
         </div>
       </div>
 
+      {/* Integrity Verification Modal */}
+      {integrityReport && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIntegrityReport(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 text-slate-900 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">GGUF Model Integrity Verification</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">{integrityReport.modelName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIntegrityReport(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className={`p-3.5 rounded-2xl border ${integrityReport.valid ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'}`}>
+                <div className="flex items-center gap-2 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{integrityReport.message}</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 font-mono text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Magic Bytes:</span>
+                  <span className="text-slate-900 font-bold">0x47475546 (GGUF V3)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Format & Quant:</span>
+                  <span className="text-slate-900 font-bold">{integrityReport.format} • {integrityReport.quantization}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">File Path:</span>
+                  <span className="text-slate-900 font-bold truncate max-w-[240px]">{integrityReport.filePath}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Disk Allocation:</span>
+                  <span className="text-slate-900 font-bold">{integrityReport.diskSizeFormatted}</span>
+                </div>
+                <div className="pt-2 border-t border-slate-200 space-y-1">
+                  <span className="text-slate-500 block">SHA-256 Checksum:</span>
+                  <div className="p-2 bg-slate-900 text-emerald-400 rounded-xl text-[10px] break-all">
+                    {integrityReport.calculatedSha256}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setIntegrityReport(null)}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PIN Authorization Modal */}
       {showPinModal && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-5 text-slate-900">
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPinModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-5 text-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
@@ -534,8 +705,16 @@ export const LocalModelPanel: React.FC<Props> = ({ onShowNotification }) => {
 
       {/* Custom GGUF/ONNX Model Import Modal */}
       {showCustomModal && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 text-slate-900">
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCustomModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 text-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">

@@ -183,10 +183,10 @@ class SubjectFocusService {
         });
       });
       chapters.push(...Array.from(chapMap.values()));
-    } else {
-      // Fallback: create standard chapters from registry if available
+    } else if (db.isGateActive(targetExamId)) {
+      // For GATE exams only, check GATE subject registry
       const regSubj = SUBJECT_REGISTRY.find(
-        (s) => s.name.toLowerCase().includes(subjectName.toLowerCase()) || subjectName.toLowerCase().includes(s.name.toLowerCase())
+        (s) => s.name.toLowerCase() === subjectName.toLowerCase()
       );
       if (regSubj) {
         regSubj.chapters.forEach((c, cIdx) => {
@@ -229,13 +229,41 @@ class SubjectFocusService {
    */
   public getLecturePlannerForSubject(subjectName: string, examId?: string): SubjectLecturePlan {
     const targetExamId = examId || db.getActiveExamId();
-    const allLectures = db.getLectures(targetExamId);
-    
-    const subLectures = allLectures.filter(
-      (l) => l.subject.toLowerCase() === subjectName.toLowerCase() ||
-             subjectName.toLowerCase().includes(l.subject.toLowerCase()) ||
-             l.subject.toLowerCase().includes(subjectName.toLowerCase())
-    );
+    let subLectures = db.getLecturesForSubject(subjectName, targetExamId);
+
+    // If no lectures are explicitly found, synthesize from that subject's syllabus chapters & topics
+    if (subLectures.length === 0) {
+      const syllabus = this.getSyllabusForSubject(subjectName, targetExamId);
+      let lecCounter = 1;
+      const today = new Date();
+
+      subLectures = syllabus.chapters.flatMap((chap, cIdx) =>
+        chap.topics.map((top, tIdx) => {
+          const lecDate = new Date(today.getTime() + (cIdx * 2 + tIdx) * 86400000).toISOString().slice(0, 10);
+          return {
+            id: `lec-${targetExamId.toLowerCase()}-${subjectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${cIdx + 1}-${tIdx + 1}`,
+            subject: subjectName,
+            chapter: chap.name,
+            title: top.name,
+            lectureNumber: lecCounter++,
+            originalDate: lecDate,
+            reanchoredDate: lecDate,
+            durationMinutes: 90,
+            timeSpentMinutes: top.status === 'Completed' ? 90 : 0,
+            dpp: `DPP-${cIdx + 1}.${tIdx + 1}`,
+            weeklyTest: tIdx === chap.topics.length - 1 ? `WT-${cIdx + 1}` : '',
+            status: top.status === 'Completed' ? ('Completed' as const) : ('Pending' as const),
+            watchSpeed: 1,
+            notes: '',
+            dppCompleted: false,
+            revisionCount: 0,
+            confidence: top.confidence || 3,
+            mistakesLogged: '',
+            bookmarkTimestamp: '',
+          };
+        })
+      );
+    }
 
     const completed = subLectures.filter((l) => l.status === 'Completed');
     const pending = subLectures.filter((l) => l.status !== 'Completed');

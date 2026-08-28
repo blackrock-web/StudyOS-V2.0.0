@@ -96,14 +96,11 @@ function docToSyllabusSubjects(doc: OfficialSyllabusDoc): SyllabusSubject[] {
 const CS_REGISTRY = normalizeDoc(RAW_CS_SYLLABUS_DOC);
 const DA_REGISTRY = normalizeDoc(RAW_DA_SYLLABUS_DOC);
 
-/** Flat unique subject names for dropdowns */
+/** Flat unique subject names for GATE dropdowns */
 export const ALL_SUBJECT_NAMES: string[] = (() => {
   const set = new Set<string>();
   CS_REGISTRY.forEach((s) => set.add(s.name));
   DA_REGISTRY.forEach((s) => set.add(s.name));
-  // Chapters as well for fine-grained selection
-  CS_REGISTRY.forEach((s) => s.chapters.forEach((c) => set.add(c.name)));
-  DA_REGISTRY.forEach((s) => s.chapters.forEach((c) => set.add(c.name)));
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 })();
 
@@ -124,16 +121,21 @@ export function getChaptersForSubject(subjectName: string, examId?: string): str
   if (!subjectName) return [];
   const dbInst = getDbInstance();
   const activeExamId = examId || (dbInst ? dbInst.getActiveExamId() : (typeof window !== 'undefined' ? localStorage.getItem('studyos_active_exam_id') || 'GATE2027' : 'GATE2027'));
-  
+  const isGate = dbInst ? dbInst.isGateActive(activeExamId) : (activeExamId.toUpperCase().includes('GATE'));
+
   if (dbInst) {
     const exams = dbInst.getExams();
-    const activeExam = exams.find((e: any) => e.id === activeExamId || e.code === activeExamId);
+    const activeExam = exams.find(
+      (e: any) =>
+        e.id.toUpperCase() === activeExamId.toUpperCase() ||
+        (e.code && e.code.toUpperCase() === activeExamId.toUpperCase())
+    );
     if (activeExam && Array.isArray(activeExam.subjects)) {
       const foundSub = activeExam.subjects.find(
-        (s: any) => s.name.toLowerCase() === subjectName.toLowerCase()
+        (s: any) => (typeof s === 'string' ? s : s?.name || '').toLowerCase() === subjectName.toLowerCase()
       );
       if (foundSub && Array.isArray(foundSub.chapters) && foundSub.chapters.length > 0) {
-        return foundSub.chapters.map((c: any) => c.name);
+        return foundSub.chapters.map((c: any) => c.name || c);
       }
     }
 
@@ -149,18 +151,34 @@ export function getChaptersForSubject(subjectName: string, examId?: string): str
         if (chaps.size > 0) return Array.from(chaps);
       }
     }
+
+    // Check lecture planner for chapters of this subject in this exam
+    const lectures = dbInst.getLectures(activeExamId);
+    if (lectures && lectures.length > 0) {
+      const subLectures = lectures.filter((l: any) => l.subject?.toLowerCase() === subjectName.toLowerCase());
+      if (subLectures.length > 0) {
+        const chaps = new Set<string>();
+        subLectures.forEach((l: any) => {
+          if (l.chapter) chaps.add(l.chapter.trim());
+        });
+        if (chaps.size > 0) return Array.from(chaps);
+      }
+    }
   }
 
-  const found = SUBJECT_REGISTRY.filter(
-    (s) => s.name.toLowerCase() === subjectName.toLowerCase()
-  );
-  if (found.length > 0) {
-    const chapters = new Set<string>();
-    found.forEach((s) => s.chapters.forEach((c) => chapters.add(c.name)));
-    return Array.from(chapters);
+  // Only check GATE registry if this is a GATE exam
+  if (isGate) {
+    const found = SUBJECT_REGISTRY.filter(
+      (s) => s.name.toLowerCase() === subjectName.toLowerCase()
+    );
+    if (found.length > 0) {
+      const chapters = new Set<string>();
+      found.forEach((s) => s.chapters.forEach((c) => chapters.add(c.name)));
+      return Array.from(chapters);
+    }
   }
 
-  return ['Introduction & Fundamentals', 'Core Concepts & Analysis', 'Practice Problems & Exercises'];
+  return [];
 }
 
 /** Topics for subject + chapter */
@@ -168,20 +186,30 @@ export function getTopicsForChapter(subjectName: string, chapterName: string, ex
   if (!subjectName || !chapterName) return [];
   const dbInst = getDbInstance();
   const activeExamId = examId || (dbInst ? dbInst.getActiveExamId() : (typeof window !== 'undefined' ? localStorage.getItem('studyos_active_exam_id') || 'GATE2027' : 'GATE2027'));
+  const isGate = dbInst ? dbInst.isGateActive(activeExamId) : (activeExamId.toUpperCase().includes('GATE'));
+
+  const resultTopics = new Set<string>();
 
   if (dbInst) {
     const exams = dbInst.getExams();
-    const activeExam = exams.find((e: any) => e.id === activeExamId || e.code === activeExamId);
+    const activeExam = exams.find(
+      (e: any) =>
+        e.id.toUpperCase() === activeExamId.toUpperCase() ||
+        (e.code && e.code.toUpperCase() === activeExamId.toUpperCase())
+    );
     if (activeExam && Array.isArray(activeExam.subjects)) {
       const foundSub = activeExam.subjects.find(
-        (s: any) => s.name.toLowerCase() === subjectName.toLowerCase()
+        (s: any) => (typeof s === 'string' ? s : s?.name || '').toLowerCase() === subjectName.toLowerCase()
       );
       if (foundSub && Array.isArray(foundSub.chapters)) {
         const foundChap = foundSub.chapters.find(
-          (c: any) => c.name.toLowerCase() === chapterName.toLowerCase()
+          (c: any) => (c.name || c).toLowerCase() === chapterName.toLowerCase()
         );
         if (foundChap && Array.isArray(foundChap.topics) && foundChap.topics.length > 0) {
-          return foundChap.topics.map((t: any) => t.name);
+          foundChap.topics.forEach((t: any) => {
+            const name = typeof t === 'string' ? t : t?.name;
+            if (name) resultTopics.add(name);
+          });
         }
       }
     }
@@ -190,31 +218,61 @@ export function getTopicsForChapter(subjectName: string, chapterName: string, ex
     if (syllabus && syllabus.length > 0) {
       const subj = syllabus.find((s: any) => s.name.toLowerCase() === subjectName.toLowerCase());
       if (subj && Array.isArray(subj.topics)) {
-        const matchingTopics = subj.topics
-          .filter((t: any) => t.name.toLowerCase().startsWith(`${chapterName.toLowerCase()}:`))
-          .map((t: any) => t.name.split(':')[1]?.trim() || t.name);
-        if (matchingTopics.length > 0) return matchingTopics;
+        subj.topics.forEach((t: any) => {
+          if (t.name.toLowerCase().startsWith(`${chapterName.toLowerCase()}:`)) {
+            const topName = t.name.split(':')[1]?.trim() || t.name;
+            resultTopics.add(topName);
+          } else if (
+            chapterName.toLowerCase() === 'all' ||
+            chapterName.toLowerCase() === 'core topics' ||
+            chapterName.toLowerCase() === subj.name.toLowerCase()
+          ) {
+            const parts = t.name.split(':');
+            resultTopics.add(parts.length > 1 ? parts[1].trim() : t.name);
+          }
+        });
       }
+    }
+
+    // Include topics from lecture planner for this subject + chapter
+    const lectures = dbInst.getLectures(activeExamId);
+    if (lectures && lectures.length > 0) {
+      lectures
+        .filter(
+          (l: any) =>
+            l.subject?.toLowerCase() === subjectName.toLowerCase() &&
+            (chapterName.toLowerCase() === 'all' ||
+              !l.chapter ||
+              l.chapter.toLowerCase() === chapterName.toLowerCase())
+        )
+        .forEach((l: any) => {
+          if (l.title) resultTopics.add(l.title.trim());
+        });
     }
   }
 
-  const found = SUBJECT_REGISTRY.filter(
-    (s) => s.name.toLowerCase() === subjectName.toLowerCase()
-  );
-  const topics = new Set<string>();
-  found.forEach((s) => {
-    s.chapters
-      .filter((c) => c.name.toLowerCase() === chapterName.toLowerCase())
-      .forEach((c) => {
-        c.topics.forEach((t) => {
-          topics.add(t.name);
-          t.subtopics.forEach((st) => topics.add(st));
-        });
-      });
-  });
-  if (topics.size > 0) return Array.from(topics);
+  if (resultTopics.size > 0) {
+    return Array.from(resultTopics);
+  }
 
-  return ['Core Principles & Theory', 'Applied Problem Solving', 'PYQs & Exam Drills'];
+  // Only check GATE registry if this is a GATE exam
+  if (isGate) {
+    const found = SUBJECT_REGISTRY.filter(
+      (s) => s.name.toLowerCase() === subjectName.toLowerCase()
+    );
+    found.forEach((s) => {
+      s.chapters
+        .filter((c) => c.name.toLowerCase() === chapterName.toLowerCase() || chapterName.toLowerCase() === 'all')
+        .forEach((c) => {
+          c.topics.forEach((t) => {
+            resultTopics.add(t.name);
+            t.subtopics.forEach((st) => resultTopics.add(st));
+          });
+        });
+    });
+  }
+
+  return Array.from(resultTopics);
 }
 
 /** Custom user subjects */
@@ -243,25 +301,30 @@ export function addCustomSubject(name: string): void {
 
 export function getAllSubjectOptions(examId?: string): string[] {
   const dbInst = getDbInstance();
-  const activeExamId = examId || (dbInst ? dbInst.getActiveExamId() : (typeof window !== 'undefined' ? localStorage.getItem('studyos_active_exam_id') || 'GATE2027' : 'GATE2027'));
-  const isGate = activeExamId.toUpperCase() === 'GATE2027' || activeExamId.toUpperCase() === 'GATE';
-  const custom = getCustomSubjects();
+  const activeExamId =
+    examId ||
+    (dbInst
+      ? dbInst.getActiveExamId()
+      : typeof window !== 'undefined'
+      ? localStorage.getItem('studyos_active_exam_id') || 'GATE2027'
+      : 'GATE2027');
+  const isGate = dbInst
+    ? dbInst.isGateActive(activeExamId)
+    : (activeExamId.toUpperCase() === 'GATE2027' ||
+       activeExamId.toUpperCase() === 'GATE' ||
+       activeExamId.toUpperCase() === 'EXAM-GATE-2027');
 
   if (dbInst) {
     const subs = dbInst.getCurrentExamSubjects(activeExamId);
     if (subs && subs.length > 0) {
-      const set = new Set<string>();
-      subs.forEach((s) => set.add(s));
-      custom.forEach((c) => set.add(c));
-      return Array.from(set);
+      return subs;
     }
   }
 
   if (isGate) {
-    const set = new Set([...ALL_SUBJECT_NAMES, ...custom]);
-    return Array.from(set);
+    return ALL_SUBJECT_NAMES;
   }
 
-  return custom.length > 0 ? custom : ['General Studies'];
+  return [];
 }
 

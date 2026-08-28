@@ -206,9 +206,20 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Global Ctrl + K listener
+  // Global Keydown listener: Escape & Ctrl+K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAvatarMenu(false);
+        setShowNotifCenter(false);
+        setShowCommandPalette(false);
+        setShowCalculator(false);
+        setShowPomodoroModal(false);
+        setShowScratchpadDrawer(false);
+        setShowFocusSessionModal(false);
+        setShowThemeScheduler(false);
+        window.dispatchEvent(new CustomEvent('studyos_esc_pressed'));
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setShowCommandPalette((prev) => !prev);
@@ -304,9 +315,8 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
       label: 'Planner',
       icon: Calendar,
       defaultTab: 'planner-hub',
-      matchTabs: ['focus-mode', 'single-subject-focus', 'lectures', 'planner-hub', 'planner', 'weekly-planner', 'tasks', 'calendar', 'revision-schedule'],
+      matchTabs: ['lectures', 'planner-hub', 'planner', 'weekly-planner', 'tasks', 'calendar', 'revision-schedule'],
       subTabs: [
-        { id: 'focus-mode', label: 'Single-Subject Focus', icon: Target, badge: 'Focus' },
         { id: 'planner-hub', label: 'Planner Hub', icon: Calendar, badge: 'Merged' },
         { id: 'lectures', label: 'Lecture Planner', icon: Clock, badge: db.isGateActive(activeExam?.id) ? 'PW' : undefined },
       ],
@@ -680,7 +690,12 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
           <div className="p-2 border-t border-[#ECECF5] bg-slate-50/80 relative">
             {/* Popover Menu Triggered by Profile Avatar */}
             {showAvatarMenu && (
-              <div className="absolute bottom-16 left-2 w-64 p-2 rounded-2xl bg-white/95 backdrop-blur-md border border-purple-200 shadow-2xl space-y-1 animate-fadeIn z-50 text-xs">
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowAvatarMenu(false)}
+                />
+                <div className="absolute bottom-16 left-2 w-64 p-2 rounded-2xl bg-white/95 backdrop-blur-md border border-purple-200 shadow-2xl space-y-1 animate-fadeIn z-50 text-xs">
                 <div className="px-3 py-2 border-b border-purple-100 font-black text-slate-900 flex items-center justify-between">
                   <div>
                     <div className="text-xs font-bold text-slate-900">{user.fullName}</div>
@@ -777,6 +792,7 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
                   <LogOut className="w-4 h-4 text-rose-600" /> Logout Account
                 </button>
               </div>
+              </>
             )}
 
             <button
@@ -874,7 +890,12 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
 
       
       {showNotifCenter && (
-        <div className="fixed top-16 right-4 z-[220] w-96 max-h-[70vh] flex flex-col rounded-2xl bg-white border border-slate-200 shadow-2xl animate-fadeIn">
+        <>
+          <div
+            className="fixed inset-0 z-[215]"
+            onClick={() => setShowNotifCenter(false)}
+          />
+          <div className="fixed top-16 right-4 z-[220] w-96 max-h-[70vh] flex flex-col rounded-2xl bg-white border border-slate-200 shadow-2xl animate-fadeIn">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
             <div className="text-sm font-black text-slate-900">Notifications</div>
             <div className="flex items-center gap-2">
@@ -931,6 +952,7 @@ export const DesktopFrame: React.FC<DesktopFrameProps> = ({
             )}
           </div>
         </div>
+        </>
       )}
 
       <CommandPalette

@@ -45,10 +45,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         onClose();
       }
     };
+    const handleStudyOsEsc = () => {
+      onClose();
+    };
     if (isOpen) {
       window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('studyos_esc_pressed', handleStudyOsEsc);
     }
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('studyos_esc_pressed', handleStudyOsEsc);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -88,7 +95,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/60 backdrop-blur-sm p-4 font-sans select-none animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/60 backdrop-blur-sm p-4 font-sans select-none animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-purple-100 overflow-hidden flex flex-col max-h-[70vh]">
         {/* Search Bar */}
         <div className="p-3 border-b border-purple-100 flex items-center space-x-3 bg-purple-50/40">

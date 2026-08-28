@@ -41,7 +41,7 @@ import { syncService } from '../../services/syncService';
 import { TaskItem } from '../../types';
 import { GlassCard } from '../shared/GlassCard';
 import { UnifiedSyllabusCoverage } from './UnifiedSyllabusCoverage';
-import { getAllSubjectOptions } from '../../data/subjectRegistry';
+import { getAllSubjectOptions, getChaptersForSubject } from '../../data/subjectRegistry';
 import { DailyScheduleSetupModal } from './DailyScheduleSetupModal';
 import { AISchedulePlannerModal } from './AISchedulePlannerModal';
 import { LiveStudyTimerModal } from '../study/LiveStudyTimerModal';
@@ -58,8 +58,8 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
   const todayStr = new Date().toISOString().split('T')[0] || '';
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
-  // View Mode: 'month' | 'week' | 'day'
-  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day'>('month');
+  // View Mode: 'month' | 'week' | 'day' | 'ai'
+  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day' | 'ai'>('month');
 
   // Day Planner Modal Overlay state (opened when clicking a date in month/week view)
   const [showDayModal, setShowDayModal] = useState<boolean>(false);
@@ -85,10 +85,6 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
 
   const [showRoutineSlotEditor, setShowRoutineSlotEditor] = useState<boolean>(false);
   const [quickFocusSubject, setQuickFocusSubject] = useState<string>(() => db.getCurrentExamSubjects()[0] || 'General Studies');
-  const [quickFocusSlot, setQuickFocusSlot] = useState<string>(() => routineSlots[0]?.name || 'Morning');
-  const [quickFocusTopic, setQuickFocusTopic] = useState<string>('');
-  const [quickFocusMinutes, setQuickFocusMinutes] = useState<number>(60);
-  const [quickFocusPriority, setQuickFocusPriority] = useState<TaskItem['priority']>('High');
 
   // Keep quickFocusSubject in sync whenever active exam or examSubjects change
   useEffect(() => {
@@ -98,13 +94,6 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
       setQuickFocusSubject(currentSubs[0] || 'Core Subject');
     }
   }, [activeExamId, activeExam]);
-
-  // Keep quickFocusSlot in sync when routineSlots change
-  useEffect(() => {
-    if (routineSlots.length > 0 && !routineSlots.some((s) => s.name === quickFocusSlot || s.id === quickFocusSlot)) {
-      setQuickFocusSlot(routineSlots[0]?.name || 'Morning');
-    }
-  }, [routineSlots, quickFocusSlot]);
 
   // Automatic pause & analytics sync on minimize/close
   useEffect(() => {
@@ -184,13 +173,13 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
     priority?: TaskItem['priority']
   ) => {
     const chosenSub = subject || quickFocusSubject || (examSubjects[0] || 'Core Subject');
-    const chosenMins = minutes || quickFocusMinutes || 60;
-    const chosenSlot = slot || quickFocusSlot || (routineSlots[0]?.name || 'Morning');
-    const topicText = customTopic !== undefined ? customTopic : quickFocusTopic;
+    const chosenMins = minutes || 60;
+    const chosenSlot = slot || (routineSlots[0]?.name || 'Morning');
+    const topicText = customTopic !== undefined ? customTopic : '';
     const sessionTitle = topicText.trim()
       ? `${chosenSub}: ${topicText.trim()}`
       : `${chosenSub} Single-Subject Focus Session`;
-    const chosenPriority = priority || quickFocusPriority || 'High';
+    const chosenPriority = priority || 'High';
 
     const focusTask: TaskItem = {
       id: 'focus-' + Date.now(),
@@ -647,6 +636,7 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
       }
 
       if (subjectFilter !== 'All' && t.subject !== subjectFilter) return false;
+
       if (priorityFilter !== 'All' && t.priority !== priorityFilter) return false;
 
       if (statusFilter !== 'All') {
@@ -729,7 +719,7 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* View Mode Switcher: Month / Week / Day */}
+            {/* View Mode Switcher: Month / Week / Day Planner / AI Planner */}
             <div className="flex p-1 bg-slate-100 rounded-xl border border-slate-200/80">
               <button
                 onClick={() => setViewMode('month')}
@@ -755,33 +745,16 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
               >
                 Day Planner
               </button>
+              <button
+                onClick={() => setViewMode('ai')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  viewMode === 'ai' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI Planner</span>
+              </button>
             </div>
-
-            {/* Daily Setup & Auto-Scheduler Button */}
-            <button
-              onClick={() => setShowAIScheduleModal(true)}
-              className="daily-setup-ai-planner px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>AI Smart Planner</span>
-            </button>
-
-            <button
-              onClick={() => setShowDailySetupModal(true)}
-              className="daily-setup-ai-planner px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
-            >
-              <CalendarIcon className="w-4 h-4" />
-              <span>Daily Setup</span>
-            </button>
-
-            {/* Create New Item Button */}
-            <button
-              onClick={() => handleOpenNewTaskModal()}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 hover:opacity-95 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-purple-500/20 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Schedule Item</span>
-            </button>
           </div>
         </div>
 
@@ -1127,6 +1100,15 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
 
               <div className="flex items-center space-x-2">
                 <button
+                  onClick={() => setShowDailySetupModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  title="Configure Daily Routine & Constraints"
+                >
+                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Daily Setup</span>
+                </button>
+
+                <button
                   onClick={() => setShowRoutineSlotEditor(true)}
                   className="px-3 py-1.5 rounded-xl bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                   title="Configure Routine Time Slots"
@@ -1250,121 +1232,6 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
               <div>
                 <span className="text-[10px] font-extrabold text-slate-500 uppercase block">Daily Completion</span>
                 <span className="text-base font-black text-purple-700 font-mono">{dateCompletionPct}% Completed</span>
-              </div>
-            </div>
-
-            {/* SINGLE-SUBJECT FOCUS QUICK LAUNCHER BAR */}
-            {/* FOCUS LAUNCHER */}
-            <div className="focus-launcher-container p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-              {/* Header with Title & Active Exam Badge */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-100/90 pb-3">
-                <div className="flex items-center space-x-2.5">
-                  <div className="p-2.5 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-700 text-white shadow-sm">
-                    <Zap className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                      <span>⚡ Focus Launcher</span>
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                        Instant Timer Sync
-                      </span>
-                    </h4>
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      Select target slot, choose any subject from {activeExam?.title || 'active exam'}, and instantly launch a verified focus session.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
-                    <BookOpen className="w-3 h-3 text-purple-600" />
-                    {activeExam?.title || activeExam?.code || 'Active Exam Hub'}
-                  </span>
-                  <span className="px-2 py-1 rounded-lg text-[10px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
-                    {examSubjects.length} Subjects
-                  </span>
-                </div>
-              </div>
-
-              {/* Form Controls Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* 1. Target Routine Slot */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-purple-600" /> Target Routine Slot
-                  </label>
-                  <select
-                    value={quickFocusSlot}
-                    onChange={(e) => setQuickFocusSlot(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-purple-200 bg-white font-bold text-xs text-slate-800 focus:ring-2 focus:ring-purple-500 focus:outline-hidden transition-all shadow-2xs"
-                  >
-                    {routineSlots.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name} Slot ({s.startTime} - {s.endTime})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 2. Subject Dropdown (Dynamic for ALL exams) */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                    <BookOpen className="w-3 h-3 text-purple-600" /> Exam Subject ({examSubjects.length})
-                  </label>
-                  <select
-                    value={quickFocusSubject}
-                    onChange={(e) => setQuickFocusSubject(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-purple-200 bg-white font-bold text-xs text-slate-800 focus:ring-2 focus:ring-purple-500 focus:outline-hidden transition-all shadow-2xs"
-                  >
-                    {(examSubjects.length > 0 ? examSubjects : getAllSubjectOptions()).map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Custom Topic / Goal */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-purple-600" /> Topic / Session Goal (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={quickFocusTopic}
-                    onChange={(e) => setQuickFocusTopic(e.target.value)}
-                    placeholder="e.g. Dynamic Programming, Ch. 3 DPP..."
-                    className="w-full px-3 py-2 rounded-xl border border-purple-200 bg-white font-semibold text-xs text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 focus:outline-hidden transition-all shadow-2xs"
-                  />
-                </div>
-
-                {/* 4. Duration Selector */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-purple-600" /> Sprint Duration
-                  </label>
-                  <select
-                    value={quickFocusMinutes}
-                    onChange={(e) => setQuickFocusMinutes(parseInt(e.target.value) || 60)}
-                    className="w-full px-3 py-2 rounded-xl border border-purple-200 bg-white font-bold text-xs text-slate-800 focus:ring-2 focus:ring-purple-500 focus:outline-hidden transition-all shadow-2xs"
-                  >
-                    <option value={25}>25 mins (Pomodoro Sprint)</option>
-                    <option value={45}>45 mins (Focused Block)</option>
-                    <option value={60}>60 mins (Deep Study Session)</option>
-                    <option value={90}>90 mins (Full Subject Mastery)</option>
-                    <option value={120}>120 mins (Exam Simulation Block)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Action Button without preset chips */}
-              <div className="flex items-center justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleStartSingleSubjectFocus(quickFocusSubject, quickFocusMinutes, quickFocusSlot, quickFocusTopic, quickFocusPriority)}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white font-black text-xs shadow-md shadow-purple-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>⚡ Add to {quickFocusSlot} & Start Focus Timer</span>
-                </button>
               </div>
             </div>
 
@@ -1497,9 +1364,15 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
                                   >
                                     <CheckCircle2 className={`w-4 h-4 ${t.completed ? 'text-emerald-600' : 'text-slate-300 hover:text-purple-600'}`} />
                                   </button>
-                                  <span className={`text-xs font-extrabold ${t.completed ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                    {t.title}
-                                  </span>
+                                  <button
+                                    onClick={() => handleOpenEditTaskModal(t)}
+                                    className="text-left font-extrabold hover:text-purple-700 transition-colors cursor-pointer truncate"
+                                    title="Click to edit task"
+                                  >
+                                    <span className={`text-xs ${t.completed ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                      {t.title}
+                                    </span>
+                                  </button>
                                 </div>
 
                                 <div className="flex items-center space-x-1 shrink-0">
@@ -1580,6 +1453,156 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
             </div>
           </GlassCard>
         </div>
+      )}
+
+      {/* 3.5 DEDICATED AI PLANNER VIEW */}
+      {viewMode === 'ai' && (
+        <GlassCard className="p-6 space-y-6 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 border-indigo-200 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-100 pb-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-indigo-500/20">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>AI Intelligent Schedule Optimizer</span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-700 border border-indigo-200">
+                    Neural Engine
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Generates realistic, conflict-free study allocations grounded in active syllabus topics and routine constraints.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowDailySetupModal(true)}
+                className="px-3.5 py-2 rounded-xl bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <CalendarIcon className="w-4 h-4 text-indigo-600" />
+                <span>Daily Constraints Setup</span>
+              </button>
+
+              <button
+                onClick={() => setShowAIScheduleModal(true)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Launch Interactive AI Scheduler</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick AI Schedule Preview for selectedDate */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-1 space-y-4">
+              <div className="p-4 rounded-2xl bg-white/80 border border-indigo-100 shadow-xs space-y-3">
+                <div className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <Target className="w-4 h-4 text-indigo-600" />
+                  <span>Target Date & Exam Profile</span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="text-slate-500 font-bold">Selected Date:</span>
+                    <span className="font-extrabold text-slate-800">{selectedDate}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                    <span className="text-slate-500 font-bold">Active Exam:</span>
+                    <span className="font-extrabold text-purple-700">{activeExam?.name || 'Standard Curriculum'}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-slate-500 font-bold">Subjects Tracked:</span>
+                    <span className="font-extrabold text-indigo-700">{examSubjects.length} subjects</span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setShowAIScheduleModal(true)}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Generate AI Schedule for {selectedDate}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 space-y-4">
+              <div className="p-4 rounded-2xl bg-white/80 border border-indigo-100 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-indigo-600" />
+                    <span>Current Day Schedule ({selectedDate})</span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500">
+                    {selectedDateTasks.length} tasks scheduled
+                  </span>
+                </div>
+
+                {selectedDateTasks.length === 0 ? (
+                  <div className="p-8 text-center border-2 border-dashed border-indigo-100 rounded-2xl bg-indigo-50/20 space-y-2">
+                    <Sparkles className="w-8 h-8 text-indigo-400 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">No schedule generated yet for this date.</p>
+                    <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                      Click the AI Planner button to automatically organize lectures, revision blocks, and practice sessions into your daily routine.
+                    </p>
+                    <button
+                      onClick={() => setShowAIScheduleModal(true)}
+                      className="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Auto-Generate Now</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                    {selectedDateTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 transition-all flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            onClick={() => handleCycleStatus(task.id)}
+                            className={`p-1 rounded-md transition-colors cursor-pointer ${
+                              task.completed || task.status === 'Completed'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <div className="min-w-0">
+                            <h5 className={`font-bold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                              {task.title}
+                            </h5>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                              <span className="font-semibold text-purple-700">{task.subject}</span>
+                              <span>•</span>
+                              <span>{task.timeSlot || 'Any Time'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getPriorityBadgeClass(task.priority)}`}>
+                            {task.priority}
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-600 font-bold">
+                            {task.estimatedMinutes}m
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </GlassCard>
       )}
 
       {/* 4. UNIFIED SYLLABUS, LECTURE PLANNER & STUDY PROGRESS COVERAGE ENGINE */}
@@ -1826,6 +1849,17 @@ export const PlannerHub: React.FC<PlannerHubProps> = ({ onShowNotification }) =>
       <RoutineSlotEditorModal
         isOpen={showRoutineSlotEditor}
         onClose={() => setShowRoutineSlotEditor(false)}
+        onShowNotification={onShowNotification}
+      />
+
+      {/* Add Schedule Item Dynamic Modal */}
+      <AddScheduleItemModal
+        isOpen={showAddScheduleModal}
+        onClose={() => setShowAddScheduleModal(false)}
+        defaultDate={selectedDate}
+        onItemAdded={() => {
+          setTasks(db.getTasks());
+        }}
         onShowNotification={onShowNotification}
       />
     </div>

@@ -29,7 +29,7 @@ import {
   LiveStudySessionState,
 } from '../types';
 import { CANONICAL_PW_LECTURES, GATE_SYLLABUS_SUBJECTS, INITIAL_GATE_PW_SUBJECT_PLANS } from '../data/canonicalData';
-import { OFFICIAL_GATE_SYLLABUS, ALL_SUBJECT_NAMES } from '../data/subjectRegistry';
+import { OFFICIAL_GATE_SYLLABUS, ALL_SUBJECT_NAMES, SUBJECT_REGISTRY } from '../data/subjectRegistry';
 import { BUILTIN_EXAMS, getExamDefinition } from '../data/examDefinitions';
 import { reanchorLectures } from './reanchoring';
 import { authService } from './auth';
@@ -1109,51 +1109,31 @@ class LocalDatabaseManager {
     const targetExamId = examId || this.getActiveExamId();
     const fullKey = `studyos_acc_${accId}_exam_${targetExamId}_${DB_KEYS.LECTURES}`;
     const stored = typeof window !== 'undefined' ? localStorage.getItem(fullKey) : null;
-    if (!stored) {
-      if (!this.isGateActive(targetExamId)) {
-        const def = getExamDefinition(targetExamId);
-        if (def && def.topicTree && def.topicTree.length > 0) {
-          const generatedLectures: PWLectureRecord[] = [];
-          let lecCounter = 1;
-          const today = new Date();
-          def.topicTree.forEach((sub, sIdx) => {
-            sub.chapters.forEach((chap, cIdx) => {
-              (chap.topics || []).slice(0, 3).forEach((top, tIdx) => {
-                const targetDate = new Date(today.getTime() + (sIdx * 3 + cIdx + tIdx) * 86400000)
-                  .toISOString()
-                  .slice(0, 10);
-                generatedLectures.push({
-                  id: `lec-${targetExamId.toLowerCase()}-${lecCounter}`,
-                  subject: sub.name,
-                  chapter: chap.name,
-                  title: top.name,
-                  lectureNumber: lecCounter++,
-                  originalDate: targetDate,
-                  reanchoredDate: targetDate,
-                  durationMinutes: 90,
-                  timeSpentMinutes: 0,
-                  dpp: `DPP-${sIdx + 1}.${cIdx + 1}`,
-                  weeklyTest: tIdx === 2 ? `WT-${sIdx + 1}` : '',
-                  status: 'Pending',
-                  watchSpeed: 1,
-                  notes: '',
-                  dppCompleted: false,
-                  revisionCount: 0,
-                  confidence: 3,
-                  mistakesLogged: '',
-                  bookmarkTimestamp: '',
-                });
-              });
-            });
-          });
-          return generatedLectures;
+    
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as PWLectureRecord[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
         }
-        return [];
+      } catch {
+        /* proceed to generation */
       }
-      const settings = this.getSettings();
-      const todayStr = new Date().toISOString().split('T')[0] || '';
-      const startDate = settings.reanchorStartDate || todayStr;
-      return reanchorLectures(CANONICAL_PW_LECTURES, startDate).map((l) => ({
+    }
+
+    // Generate comprehensive lecture records mapped from syllabus subjects & chapters
+    const isGate = this.isGateActive(targetExamId);
+    const settings = this.getSettings();
+    const todayStr = new Date().toISOString().split('T')[0] || '';
+    const startDate = settings.reanchorStartDate || todayStr;
+
+    const baseLectures: PWLectureRecord[] = [];
+    let globalLecCount = 1;
+    const today = new Date(startDate || todayStr);
+
+    if (isGate) {
+      // 1. Include base canonical lectures
+      const reanchoredCanonical = reanchorLectures(CANONICAL_PW_LECTURES, startDate).map((l) => ({
         ...l,
         status: 'Pending' as const,
         timeSpentMinutes: 0,
@@ -1161,12 +1141,161 @@ class LocalDatabaseManager {
         revisionCount: 0,
         notes: '',
       }));
+      baseLectures.push(...reanchoredCanonical);
+
+      // 2. Identify subjects present in official GATE syllabus/registry but missing from canonical lectures
+      const coveredSubjects = new Set(baseLectures.map((l) => l.subject.toLowerCase()));
+      
+      SUBJECT_REGISTRY.forEach((regSubj, sIdx) => {
+        const isCovered = Array.from(coveredSubjects).some(
+          (c) => c === regSubj.name.toLowerCase() || 
+                 regSubj.name.toLowerCase().includes(c) || 
+                 c.includes(regSubj.name.toLowerCase())
+        );
+
+        if (!isCovered) {
+          regSubj.chapters.forEach((chap, cIdx) => {
+            const chapTopics = chap.topics && chap.topics.length > 0
+              ? chap.topics
+              : [{ id: `${chap.id}-top-1`, name: `${chap.name} Concepts & Principles`, subtopics: [] }];
+
+            chapTopics.forEach((top, tIdx) => {
+              const dayOffset = (sIdx * 5 + cIdx * 2 + tIdx) % 180;
+              const lecDate = new Date(today.getTime() + dayOffset * 86400000).toISOString().slice(0, 10);
+              const lecNum = (chapTopics.length > 1 ? tIdx + 1 : cIdx + 1);
+
+              baseLectures.push({
+                id: `lec-gate-reg-${regSubj.id}-${chap.id}-${tIdx + 1}`,
+                subject: regSubj.name,
+                chapter: chap.name,
+                title: top.name,
+                lectureNumber: lecNum,
+                originalDate: lecDate,
+                reanchoredDate: lecDate,
+                durationMinutes: 90,
+                timeSpentMinutes: 0,
+                dpp: `DPP-${String(cIdx + 1).padStart(2, '0')}.${tIdx + 1}`,
+                weeklyTest: tIdx === chapTopics.length - 1 ? `WT-${regSubj.name.slice(0, 3).toUpperCase()}` : '',
+                status: 'Pending',
+                watchSpeed: 1,
+                notes: '',
+                dppCompleted: false,
+                revisionCount: 0,
+                confidence: 3,
+                mistakesLogged: '',
+                bookmarkTimestamp: '',
+              });
+            });
+          });
+        }
+      });
+
+      return baseLectures;
     }
-    try {
-      return JSON.parse(stored) as PWLectureRecord[];
-    } catch {
-      return this.isGateActive(targetExamId) ? CANONICAL_PW_LECTURES : [];
+
+    // Non-GATE Exams (Custom Exams, UPSC, NEET, CAT, JEE, etc.)
+    const def = getExamDefinition(targetExamId);
+    const syllabus = this.getSyllabus(targetExamId);
+
+    if (def && def.topicTree && def.topicTree.length > 0) {
+      def.topicTree.forEach((sub, sIdx) => {
+        sub.chapters.forEach((chap, cIdx) => {
+          const chapTopics = chap.topics && chap.topics.length > 0
+            ? chap.topics
+            : [{ id: `${chap.id}-top-1`, name: `${chap.name} Foundations`, subtopics: [] }];
+
+          chapTopics.forEach((top, tIdx) => {
+            const dayOffset = (sIdx * 4 + cIdx * 2 + tIdx) % 180;
+            const targetDate = new Date(today.getTime() + dayOffset * 86400000).toISOString().slice(0, 10);
+
+            baseLectures.push({
+              id: `lec-${targetExamId.toLowerCase()}-${globalLecCount}`,
+              subject: sub.name,
+              chapter: chap.name,
+              title: top.name,
+              lectureNumber: globalLecCount++,
+              originalDate: targetDate,
+              reanchoredDate: targetDate,
+              durationMinutes: 90,
+              timeSpentMinutes: 0,
+              dpp: `DPP-${sIdx + 1}.${cIdx + 1}`,
+              weeklyTest: tIdx === chapTopics.length - 1 ? `WT-${sIdx + 1}` : '',
+              status: 'Pending',
+              watchSpeed: 1,
+              notes: '',
+              dppCompleted: false,
+              revisionCount: 0,
+              confidence: 3,
+              mistakesLogged: '',
+              bookmarkTimestamp: '',
+            });
+          });
+        });
+      });
+    } else if (syllabus && syllabus.length > 0) {
+      syllabus.forEach((sub, sIdx) => {
+        (sub.topics || []).forEach((top, tIdx) => {
+          const parts = top.name.split(':');
+          const chapName = parts.length > 1 ? parts[0].trim() : 'Core Chapter';
+          const topName = parts.length > 1 ? parts[1].trim() : top.name;
+          const dayOffset = (sIdx * 3 + tIdx) % 180;
+          const targetDate = new Date(today.getTime() + dayOffset * 86400000).toISOString().slice(0, 10);
+
+          baseLectures.push({
+            id: `lec-${targetExamId.toLowerCase()}-${globalLecCount}`,
+            subject: sub.name,
+            chapter: chapName,
+            title: topName,
+            lectureNumber: globalLecCount++,
+            originalDate: targetDate,
+            reanchoredDate: targetDate,
+            durationMinutes: 90,
+            timeSpentMinutes: 0,
+            dpp: `DPP-${sIdx + 1}.${tIdx + 1}`,
+            weeklyTest: '',
+            status: top.status === 'Completed' ? 'Completed' : 'Pending',
+            watchSpeed: 1,
+            notes: '',
+            dppCompleted: false,
+            revisionCount: 0,
+            confidence: top.confidence || 3,
+            mistakesLogged: '',
+            bookmarkTimestamp: '',
+          });
+        });
+      });
     }
+
+    return baseLectures;
+  }
+
+  /**
+   * Retrieves all lectures strictly belonging to a specific subject name within an exam context.
+   */
+  public getLecturesForSubject(subjectName: string, examId?: string): PWLectureRecord[] {
+    if (!subjectName) return [];
+    const targetExamId = examId || this.getActiveExamId();
+    const allLectures = this.getLectures(targetExamId);
+    const q = subjectName.trim().toLowerCase();
+
+    const matched = allLectures.filter((l) => {
+      const sub = l.subject.trim().toLowerCase();
+      return (
+        sub === q ||
+        sub.replace(/s\b/g, '') === q.replace(/s\b/g, '') ||
+        sub.replace(/system/g, 'systems') === q.replace(/system/g, 'systems') ||
+        (q.includes('operating') && sub.includes('operat')) ||
+        (q.includes('dbms') && (sub.includes('database') || sub.includes('dbms'))) ||
+        (q.includes('database') && sub.includes('database')) ||
+        (q.includes('network') && sub.includes('network')) ||
+        (q.includes('algorithm') && sub.includes('algo')) ||
+        (q.includes('compiler') && sub.includes('compiler')) ||
+        (q.includes('computation') && (sub.includes('toc') || sub.includes('computat') || sub.includes('automata'))) ||
+        (q.includes('discrete') && sub.includes('discrete'))
+      );
+    });
+
+    return matched;
   }
 
   public setLectures(lectures: PWLectureRecord[]): void {
@@ -1280,34 +1409,56 @@ class LocalDatabaseManager {
     const targetExamId = examId || this.getActiveExamId();
     const isGate = this.isGateActive(targetExamId);
 
-    if (isGate) {
-      const syllabus = this.getSyllabus(targetExamId);
-      if (Array.isArray(syllabus) && syllabus.length > 0) {
-        return syllabus.map((s) => s.name).filter(Boolean);
-      }
-      return ALL_SUBJECT_NAMES;
-    }
-
+    // 1. Check if the active exam item in db.getExams() has explicit subjects
     const exams = this.getExams();
-    const activeExam = exams.find((e) => e.id === targetExamId || e.code === targetExamId);
+    const activeExam = exams.find(
+      (e) =>
+        e.id.toUpperCase() === targetExamId.toUpperCase() ||
+        (e.code && e.code.toUpperCase() === targetExamId.toUpperCase())
+    );
 
     if (activeExam && Array.isArray(activeExam.subjects) && activeExam.subjects.length > 0) {
-      const names = activeExam.subjects.map((s) => s.name).filter(Boolean);
+      const names = activeExam.subjects
+        .map((s: any) => (typeof s === 'string' ? s : s?.name))
+        .filter(Boolean);
       if (names.length > 0) return names;
     }
 
-    const examDef = getExamDefinition(targetExamId);
-    if (examDef && examDef.subjects && examDef.subjects.length > 0) {
-      return examDef.subjects.map((s) => s.name).filter(Boolean);
-    }
-
+    // 2. Check stored syllabus for this exam
     const syllabus = this.getSyllabus(targetExamId);
     if (Array.isArray(syllabus) && syllabus.length > 0) {
       const names = syllabus.map((s) => s.name).filter(Boolean);
       if (names.length > 0) return names;
     }
 
-    return ['General Studies'];
+    // 3. Check exam definitions
+    const examDef = getExamDefinition(targetExamId);
+    if (examDef && examDef.subjects && examDef.subjects.length > 0) {
+      const names = examDef.subjects.map((s) => s.name).filter(Boolean);
+      if (names.length > 0) return names;
+    }
+
+    if (examDef && examDef.topicTree && examDef.topicTree.length > 0) {
+      const names = examDef.topicTree.map((s) => s.name).filter(Boolean);
+      if (names.length > 0) return names;
+    }
+
+    // 4. Check lecture planner for this exam
+    const lectures = this.getLectures(targetExamId);
+    if (lectures && lectures.length > 0) {
+      const subSet = new Set<string>();
+      lectures.forEach((l) => {
+        if (l.subject) subSet.add(l.subject.trim());
+      });
+      if (subSet.size > 0) return Array.from(subSet);
+    }
+
+    // 5. If GATE active, fallback to official GATE syllabus subjects
+    if (isGate) {
+      return ALL_SUBJECT_NAMES;
+    }
+
+    return [];
   }
 
   // --- SINGLE-SUBJECT FOCUS MODE & PLANNING MODES ---
@@ -1315,13 +1466,13 @@ class LocalDatabaseManager {
     const targetExamId = examId || this.getActiveExamId();
     const key = `${DB_KEYS.FOCUS_MODE}_${targetExamId}`;
     const subjects = this.getCurrentExamSubjects(targetExamId);
-    const defaultSubject = subjects[0] || 'General Studies';
+    const defaultSubject = subjects[0] || '';
     const activeExam = this.getExams().find((e) => e.id === targetExamId);
 
     const defaultPlan: FocusModePlan = {
       examId: targetExamId,
       mode: 'focus',
-      subjectId: `subj-${defaultSubject.toLowerCase().replace(/\s+/g, '-')}`,
+      subjectId: defaultSubject ? `subj-${defaultSubject.toLowerCase().replace(/\s+/g, '-')}` : '',
       subjectName: defaultSubject,
       requiredHours: 40,
       completedStudyHours: 0,
@@ -2341,10 +2492,13 @@ class LocalDatabaseManager {
 
     let modified = false;
     const enriched = exams.map((ex) => {
+      const seedMatch = seed.find(
+        (s) =>
+          s.id.toUpperCase() === ex.id.toUpperCase() ||
+          (ex.code && s.code.toUpperCase() === ex.code.toUpperCase()) ||
+          s.title.toLowerCase() === ex.title.toLowerCase()
+      );
       if (!ex.subjects || ex.subjects.length === 0) {
-        const seedMatch = seed.find(
-          (s) => s.id === ex.id || s.code === ex.code || s.title.toLowerCase() === ex.title.toLowerCase()
-        );
         if (seedMatch && seedMatch.subjects && seedMatch.subjects.length > 0) {
           modified = true;
           return {
@@ -2352,6 +2506,24 @@ class LocalDatabaseManager {
             subjects: seedMatch.subjects,
             readinessPercent: ex.readinessPercent || seedMatch.readinessPercent,
             targetDailyHours: ex.targetDailyHours || seedMatch.targetDailyHours,
+          };
+        }
+      } else if (seedMatch && seedMatch.id !== 'GATE2027' && ex.id !== 'GATE2027') {
+        // If non-GATE exam accidentally contains GATE subjects (e.g. Operating Systems), replace with its seed subjects
+        const hasGateSubject = ex.subjects.some((s: any) => {
+          const n = (typeof s === 'string' ? s : s?.name || '').toLowerCase();
+          return (
+            n === 'operating systems' ||
+            n === 'discrete mathematics' ||
+            n === 'compiler design' ||
+            n === 'databases (dbms)'
+          );
+        });
+        if (hasGateSubject && seedMatch.subjects && seedMatch.subjects.length > 0) {
+          modified = true;
+          return {
+            ...ex,
+            subjects: seedMatch.subjects,
           };
         }
       }
